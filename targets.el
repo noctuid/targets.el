@@ -187,7 +187,7 @@ jump list."
        (setq push-jump-p (funcall (pop seek-functions) ,open ,close ,type))
        (setq range (ignore-errors ,select-form)))
      (when (and range push-jump-p)
-       (evil--jumps-push))
+       (evil-set-jump))
      range))
 
 (defun targets--define-keys (keymap function prefix keys)
