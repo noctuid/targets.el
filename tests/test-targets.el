@@ -378,4 +378,64 @@ considered as part of the region."
       (expect (targets-with ", a b c, d e f, |g" "v2il,")
               :to-equal ",~ a b |c, d e f, g"))))
 
-;;; TODO Object/Thing Tests
+;;; Object/Thing Tests
+(describe "The targets object/thing text object"
+  :before-all (setq evil-move-cursor-back nil)
+  (describe "targets-inner-word"
+    (it "should delete a word excluding whitespace"
+      (expect (targets-with "one |two three" "diw")
+              :to-equal "one | three"))
+    (it "should select a word excluding whitespace"
+      (expect (targets-with "one |two three" "viw")
+              :to-equal "one ~tw|o three"))
+    (it "should grow an existing selection"
+      (expect (targets-with "~one| two three" "iw")
+              :to-equal "~one tw|o three"))
+    (it "should support a count"
+      (expect (targets-with "|one two three" "d3iw")
+              :to-equal "| three")
+      (expect (targets-with "|one two three" "v3iw")
+              :to-equal "~one tw|o three")))
+  (describe "targets-a-word"
+    (it "should delete a word and trailing or leading whitespace"
+      (expect (targets-with "one |two three" "daw")
+              :to-equal "one |three")
+      (expect (targets-with "one |two" "daw")
+              :to-equal "one|"))
+    (it "should select a word and trailing or leading whitespace"
+      (expect (targets-with "one |two three" "vaw")
+              :to-equal "one ~two| three")
+      (expect (targets-with "one |two" "vaw")
+              :to-equal "one~ tw|o"))
+    (it "should grow an existing selection"
+      (expect (targets-with "~one| two three" "aw")
+              :to-equal "~one two| three"))
+    (it "should support a count"
+      (expect (targets-with "|one two three" "d2aw")
+              :to-equal "|three")
+      (expect (targets-with "|one two three" "v2aw")
+              :to-equal "~one two| three")))
+  (describe "targets-inner-next-word"
+    (xit "should delete the next word excluding whitespace"
+      (expect (targets-with "|one two three" "dinw")
+              :to-equal "|one  three"))
+    (it "should select the next word excluding whitespace"
+      (expect (targets-with "|one two three" "vinw")
+              :to-equal "one ~tw|o three"))
+    (it "should support a count"
+      ;; (expect (targets-with "|one two three" "d2inw")
+      ;;         :to-equal "|one two ")
+      (expect (targets-with "|one two three" "v2inw")
+              :to-equal "one two ~thre|e")))
+  (describe "targets-inner-last-word"
+    (xit "should delete the last word excluding whitespace"
+      (expect (targets-with "one two |three" "dilw")
+              :to-equal "one  |three"))
+    (it "should select the last word excluding whitespace"
+      (expect (targets-with "one two |three" "vilw")
+              :to-equal "one ~tw|o three"))
+    (it "should support a count"
+      ;; (expect (targets-with "one two |three" "d2ilw")
+      ;;         :to-equal " two |three")
+      (expect (targets-with "one two |three" "v2ilw")
+              :to-equal "~on|e two three"))))

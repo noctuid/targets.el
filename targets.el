@@ -51,20 +51,24 @@ prior to the seek should be added to the jump list."
 (defvar targets-around-text-objects-map (make-sparse-keymap)
   "Keymap for around text objects.")
 
-(defvar targets-text-objects
+(defvar targets-pair-text-objects
   '((paren "(" ")" pair)
     (bracket "[" "]" pair)
     (curly "{" "}" pair)
-    (angle "<" ">" pair)
-    (single-quote "'" nil quote)
+    (angle "<" ">" pair)))
+
+(defvar targets-quote-text-objects
+  '((single-quote "'" nil quote)
     (double-quote "\"" nil quote)
     (smart-single-quote "‘" "’" quote :bind nil)
-    (smart-double-quote "“" "”" quote)
+    (smart-double-quote "“" "”" quote :bind nil)
     (emacs-smart-single-quote "`" "'" quote :bind nil)
     (back-quote "`" nil quote)
     (comma "," nil separator)
-    (period "." nil separator)
-    (semi-colon ";" nil separator)
+    (period "." nil separator)))
+
+(defvar targets-separator-text-objects
+  '((semi-colon ";" nil separator)
     (colon ":" nil separator)
     (plus "+" nil separator)
     (hyphen "-" nil separator)
@@ -77,6 +81,21 @@ prior to the seek should be added to the jump list."
     (backslash "\\" nil separator)
     (ampersand "&" nil separator)
     (dollar "$" nil separator)))
+
+(defvar targets-object-text-objects
+  '((word 'evil-word nil object :keys "w")
+    (WORD 'evil-WORD nil object :keys "W")
+    (symbol 'evil-symbol nil object :keys "o")
+    (sentence 'evil-sentence nil object :keys "s")
+    (paragraph 'evil-paragraph nil object :keys "p" :linewise t)))
+
+(defvar targets-text-objects
+  (append targets-pair-text-objects
+          targets-quote-text-objects
+          targets-separator-text-objects
+          targets-object-text-objects)
+  "A list of text objects to be definite with `targets-setup'.
+Each item should be a valid arglist for `targets-define-to'.")
 
 (defun targets-push-jump-p (old-pos new-pos)
   "Whether or not to push to the evil jump list after a successful seek.
@@ -106,7 +125,11 @@ or change `targets-seek-functions' completely instead."
       ;; this happens for next/last text objects not after normal failure
       (object
        (end-of-thing open)
-       (forward-thing open count)))
+       (let ((pos (point)))
+         (forward-thing open count)
+         (if (= (point) pos)
+             (goto-char orig-pos)
+           (beginning-of-thing open)))))
     (targets-push-jump-p orig-pos (point))))
 
 (defun targets-seek-backward (open close type &optional count &rest _)
@@ -159,9 +182,13 @@ times."
              (goto-char orig-pos)
            (forward-char 1))))
       (object
-       ;; TODO restore point on failure
        (beginning-of-thing open)
-       (forward-thing open (- count))))
+       (let ((pos (point)))
+         (forward-thing open (- count))
+         (if (= (point) pos)
+             (goto-char orig-pos)
+           ;; may be redundant for some things (e.g. evil-word)
+           (beginning-of-thing open)))))
     (targets-push-jump-p orig-pos (point))))
 
 ;; TODO gensyms/once-only
@@ -304,38 +331,40 @@ The point is not restored in visual state."
                    (setf (cadr range) (1- (cadr range))))
                  range))
              (object
-              `(evil-select-a-object ,thing beg end type count ,linewise)))
+              `(evil-select-an-object ,thing beg end type count ,linewise)))
           ,seek-functions))
 
-       (evil-define-text-object ,inside-name (count &optional beg end type)
-         ,(concat "Select inside " name ".")
-         (let ((range (,inner-name count beg end type)))
-           (when range
-             (setq range (append range (list :expanded t)))
-             (goto-char (car range))
-             (skip-chars-forward " \t")
-             (setf (car range) (point))
-             (goto-char (cadr range))
-             (skip-chars-backward " \t")
-             (setf (cadr range) (point)))
-           range))
+       ,(unless (eq to-type 'object)
+          `(evil-define-text-object ,inside-name (count &optional beg end type)
+             ,(concat "Select inside " name ".")
+             (let ((range (,inner-name count beg end type)))
+               (when range
+                 (setq range (append range (list :expanded t)))
+                 (goto-char (car range))
+                 (skip-chars-forward " \t")
+                 (setf (car range) (point))
+                 (goto-char (cadr range))
+                 (skip-chars-backward " \t")
+                 (setf (cadr range) (point)))
+               range)))
 
-       (evil-define-text-object ,around-name (count &optional beg end type)
-         ,(concat "Select around " name ".")
-         (let ((range (,a-name count beg end type)))
-           (when range
-             (setq range (append range (list :expanded t)))
-             ,(when (eq to-type 'separator)
-                '(setf (cadr range) (1+ (cadr range))))
-             (goto-char (cadr range))
-             (skip-chars-forward " \t")
-             (cond ((= (point) (cadr range))
-                    (goto-char (car range))
-                    (skip-chars-backward " \t")
-                    (setf (car range) (point)))
-                   (t
-                    (setf (cadr range) (point)))))
-           range))
+       ,(unless (eq to-type 'object)
+          `(evil-define-text-object ,around-name (count &optional beg end type)
+             ,(concat "Select around " name ".")
+             (let ((range (,a-name count beg end type)))
+               (when range
+                 (setq range (append range (list :expanded t)))
+                 ,(when (eq to-type 'separator)
+                    '(setf (cadr range) (1+ (cadr range))))
+                 (goto-char (cadr range))
+                 (skip-chars-forward " \t")
+                 (cond ((= (point) (cadr range))
+                        (goto-char (car range))
+                        (skip-chars-backward " \t")
+                        (setf (car range) (point)))
+                       (t
+                        (setf (cadr range) (point)))))
+               range)))
 
        ,@(mapcar (lambda (info)
                    `(evil-define-text-object ,(cl-first info)
@@ -348,10 +377,13 @@ The point is not restored in visual state."
                       (let ((range (,(cl-second info))))
                         (when range
                           (append range (list :expanded t))))))
-                 (list (list next-inner-name inner-name " the next inner ")
-                       (list next-a-name a-name " the next outer ")
-                       (list next-inside-name inside-name " inside the next ")
-                       (list next-around-name around-name " around the next ")))
+                 (append
+                  (list (list next-inner-name inner-name " the next inner ")
+                        (list next-a-name a-name " the next outer "))
+                  (unless (eq to-type 'object)
+                    (list
+                     (list next-inside-name inside-name " inside the next ")
+                     (list next-around-name around-name " around the next ")))))
 
        ,@(mapcar (lambda (info)
                    `(evil-define-text-object ,(cl-first info)
@@ -364,12 +396,15 @@ The point is not restored in visual state."
                       (let ((range (,(cl-second info))))
                         (when range
                           (append range (list :expanded t))))))
-                 (list (list last-inner-name inner-name " the last inner " nil)
-                       (list last-a-name a-name " the last outer " t)
-                       (list last-inside-name inside-name " inside the last "
-                             nil)
-                       (list last-around-name around-name " around the last "
-                             t)))
+                 (append
+                  (list (list last-inner-name inner-name " the last inner " nil)
+                        (list last-a-name a-name " the last outer " t))
+                  (unless (eq to-type 'object)
+                    (list
+                     (list last-inside-name inside-name " inside the last "
+                           nil)
+                     (list last-around-name around-name " around the last "
+                           t)))))
        ,(when bind
           `(progn
              ,@(mapcar (lambda (info)
@@ -377,26 +412,30 @@ The point is not restored in visual state."
                                                 ,(cl-second info)
                                                 ,(cl-third info)
                                                 ',keys))
-                       `((evil-inner-text-objects-map #',inner-name nil)
-                         (evil-outer-text-objects-map #',a-name nil)
-                         (targets-inside-text-objects-map #',inside-name nil)
-                         (targets-around-text-objects-map #',around-name nil)
-                         (evil-inner-text-objects-map #',next-inner-name
-                                                      ,next-key)
-                         (evil-outer-text-objects-map #',next-a-name
-                                                      ,next-key)
-                         (targets-inside-text-objects-map #',next-inside-name
-                                                          ,next-key)
-                         (targets-around-text-objects-map #',next-around-name
-                                                          ,next-key)
-                         (evil-inner-text-objects-map #',last-inner-name
-                                                      ,last-key)
-                         (evil-outer-text-objects-map #',last-a-name
-                                                      ,last-key)
-                         (targets-inside-text-objects-map #',last-inside-name
-                                                          ,last-key)
-                         (targets-around-text-objects-map #',last-around-name
-                                                          ,last-key))))))))
+                       (append
+                        (list
+                         `(evil-inner-text-objects-map #',inner-name nil)
+                         `(evil-outer-text-objects-map #',a-name nil)
+                         `(evil-inner-text-objects-map #',next-inner-name
+                                                       ,next-key)
+                         `(evil-outer-text-objects-map #',next-a-name
+                                                       ,next-key)
+                         `(evil-inner-text-objects-map #',last-inner-name
+                                                       ,last-key)
+                         `(evil-outer-text-objects-map #',last-a-name
+                                                       ,last-key))
+                        (unless (eq to-type 'object)
+                          (list
+                           `(targets-inside-text-objects-map #',inside-name nil)
+                           `(targets-around-text-objects-map #',around-name nil)
+                           `(targets-inside-text-objects-map #',next-inside-name
+                                                             ,next-key)
+                           `(targets-around-text-objects-map #',next-around-name
+                                                             ,next-key)
+                           `(targets-inside-text-objects-map #',last-inside-name
+                                                             ,last-key)
+                           `(targets-around-text-objects-map #',last-around-name
+                                                             ,last-key))))))))))
 
 ;;;###autoload
 (cl-defmacro targets-setup (&optional bind
