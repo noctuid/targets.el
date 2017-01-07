@@ -1,0 +1,27 @@
+#+STARTUP: indent
+#+STARTUP: overview
+
+* targets.el
+- A combination of the targets, TextObjectify, anyblock, and expand-region vim plugins.
+
+* Sample setup with use-package:
+
+#+BEGIN_SRC emacs-lisp
+  (use-package targets :load-path "path/to/targets.el"
+    :init
+    (setq targets-pair-text-objects
+          '((paren "(" ")" pair :more-keys "b") ; more-keys provides an alias to "("
+            (bracket "[" "]" pair :more-keys "r")
+            (curly "{" "}" pair :more-keys "c")
+            (angle "<" ">" pair)))
+
+    :config
+    (targets-setup t))
+#+END_SRC
+
+* Inspiration
+- [[https://github.com/wellle/targets.vim][wellle/targets.vim]] vim plugin
+- [[https://github.com/rhysd/vim-textobj-anyblock][rhysd/vim-textobj-anyblock]] vim plugin
+- [[https://github.com/paradigm/TextObjectify][paradigm/TextObjectify]] vim plugin
+- [[https://github.com/terryma/vim-expand-region][terryma/vim-expand-region]] vim plugin
+- [[https://redd.it/5fotth][this]] reddit thread
