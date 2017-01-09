@@ -1,0 +1,135 @@
+#+STARTUP: overview
+* About
+This package is like a combination of the targets, TextObjectify, anyblock, and expand-region vim plugins.
+
+Please note that this package is in an early stage of development. This package is not yet polished, and much of the planned functionality is not yet implemented.
+
+* Differences from =targets.vim=
+- Pairs can be regexps
+- No N or L (see rationale below)
+- Objects are supported (e.g. =danw=; this is a todo item for targets.vim)
+- Currently no support for tag text objects and no argument text object
+- Not polished (please make issues)
+
+* Types of Text Objects
+Targets.vim specifies three kinds of text objects. This package adds another three to that list:
+
+- pair (created using ~evil-select-paren~)
+- quote (created using ~evil-select-quote~)
+- separator (created using ~evil-select-paren~)
++ object (created with ~evil-select-*-object~; uses thing-at-point)
++ composite (a combination of any number of the above; not yet implemented)
++ simple (e.g. created using ~evil-range~; extra =n=, =l=, etc. text objects not supported; not yet implemented)
+
+** Pair
+A pair consists of an opening and closing delimiter that are different from each other. Each can be a single character or a regexp.
+
+** Quote
+A quote consists of an opening and closing delimiter that are the same. The delimiter must be a single character. Unlike with evil's default quote text objects, =a= will not select any surrounding whitespace (this functionality is moved to =A=). There is an option to keep the default behavior (not yet implemented).
+
+** Separator
+The main difference between a separator and a quote is that there do not need to be a balanced number of separators. A separator delimiter can be a regexp. =a= also behaves slightly differently. It includes the first separator but not the second, so that after a deletion, a separator will still be left in between the text on either side.
+
+** Objects/Things
+These are text objects that use =thingatpt.el= such as =evil-word= and =evil-sentence=. Since =i= and =a= already act as =I= and =A= by default, no =I= or =A= text objects are created.
+
+** Miscellaneous/Simple
+Since this package is about adding extra text objects, it also adds a few other specific text objects that evil does not have by default:
+
+- line (not yet implemented)
+- buffer (not yet implemented)
+- argument (as a regexp pair; not yet implemented)
+
+** i, a, I, A, l, n, r
+In addition to the standard inner and outer text objects, the =targets.vim= plugin adds =[I]nside= and =[A]round=. In this package, these act how =i= and =a= do for objects (such as =evil-word=) except they are for the pair, quote, and separator types. =I= will select inside the delimiters excluding any whitespace, and =A= will select all the text encompassed by the delimiters, the delimiters, and either trailing or leading whitespace. Trailing whitespace is preferred.
+
+=[n]ext= and =[l]ast= text objects are also added. These will select the next and previous text object and can take a count. For example, =vin(= would select the next parens, and =v2in(= would select the parens after those. When used with a non-selection operator (such as delete), the point will not be moved.
+
+The =targets.vim= plugin also has =N= and =L= (which act as =n= and =l= with a doubled count). These do not exist for quotes since seeking behavior is intelligent in this package (a proper quote will always be selected). They do not exist for separators because it is easy to double your count if you wish to.
+
+Finally, there is a =[r]emote= text object (not yet implemented). This allows you to select the text object to act on using avy.
+
+Note that the keys used for these can be customized.
+
+* Additions to Evil's Functionality
+Unlike in vim, evil already implements some of the features added in the aforementioned vim plugins. Evil's quote text objects can cover multiple lines, and paren text objects will seek forward if defined with strings instead of characters (like in =TextObjectify=). Evil's quote text objects are smart and will only select within a proper quote (and not the space in between quoted text; like in =targets=). Evil's text objects also support counts and expanding a selection when called again (like =targets= and =expand-region=). Adding composite text objects (like =anyblock= has) allows for expanding a region to fill the next of any number of text objects.
+
+** Seeking
+By default, =i(=, for example, will not seek forward. ~evil-inner-paren~ can be redefined to seek forward by using strings instead of characters for the open and close paren, but the behavior will not always be as intelligent. This is because ~evil-up-block~ (~evil-up-paren~ is used for the default paren text objects) does not consider whether delimiters are escaped or whether they are in the same string or comment. Evil also does not have backward seeking.
+
+Instead of attempting to add more types of seeking to every evil selection function directly, this package just ignores the default seeking. If there is no text object at the point, this package will try the functions in =targets-seek-functions= in order in an attempt to find a text object. Like in =targets.vim=, seeking is customizable (by changing the functions in =targets-seek-functions=). By default, every text object defined with this package will seek first forward and then backward without a bound.
+
+If you want to create a new seeking function, you can look at the functions in =targets-seek-functions= and at the arguments they take. It is more likely that you will only want to make slight changes to the seeking behavior. For example, if you don't want backward seeking, you can remove that function from the list. If you don't want any seeking, you can set the list to =nil=. If you want to bound seeking, you can set =targets-seek-bound= to a function that returns a buffer position (not yet implemented). If you do want to create your own seeking function, note that seeking functions should return a true value if the previous point should be added to the jump list.
+
+** Jump List
+Like in =targets.vim=, you can also customize when seeking causes a new entry to be added to the jump list. To do this, you can redefine or override the ~targets-push-jump-p~ function. By default, a new entry is added when seeking moves the point to a different line.
+
+* Text Object Creation
+This package provides three main macros for creating text objects.
+
+** ~targets-define-to~
+This is the main way provided by this package for creating text objects in bulk.
+
+Here is a basic example with all the required arguments:
+#+begin_src emacs-lisp
+(targets-define-to 'paren "(" ")" 'pair)
+#+end_src
+This will result in the creation of 16 text objects (=inner=, =a=, =inside=, =around=, and the next, last, and remote versions of these).
+
+The first argument is a symbol that will be used when naming the new text objects. The next two arguments specify the delimiters for the text objects. The fourth arguments specifies the type of the text objects. The names for the types are =pair=, =quote=, =separator=, and =object=. Only =pair= will use the closing delimiter. The opening delimiter should always be a string except for an =object=, for which it should be the symbol corresponding to the thing.
+#+begin_src emacs-lisp
+(targets-define-to 'double-quote "\"" nil 'quote)
+(targets-define-to 'comma "," nil 'separator)
+(targets-define-to 'word 'evil-word nil 'object)
+#+end_src
+
+~targets-define-to~ accepts additional keyword arguments. Specifying =bind= as non-nil will also bind the created text objects. By default, text objects are bound to the opening delimiter (and closing delimiter for pairs, e.g =i(=, =i)=, =a(=, =a)=, etc.). If the delimiters are regexps or the type is =object=, =:keys= must be explicitly specified. =:keys= completely replaces the default keys, and =:more-keys= adds to them. Both can be either a single key or a list of keys. =:next-key= and =:last-key= can also be specified.
+#+begin_src emacs-lisp
+(targets-define-to 'paren "(" ")" 'pair :bind t :more-keys "r" :last-key "p")
+(targets-define-to 'word 'evil-word nil 'object :bind t :keys "w")
+#+end_src
+** ~targets-define-composite-to~
+Not yet implemented.
+
+** ~targets-define-simple-to~
+Not yet implemented.
+
+* Configuration
+~targets-setup~ can be used to create and optionally bind all the text objects specified in =targets-text-objects=. =targets-text-objects= is a list of lists of arguments to be passed to ~targets-define-to~.
+
+When run without any arguments, ~targets-setup~ will only create the text objects. It takes an optional, positional argument that specifies whether text objects should also be bound to keys. Keyword arguments can be used to customize the keys used in the bindings. =:inside-key= and =:around-key= determine what keys are bound to =targets-inside-text-objects-map= and =targets-around-text-objects-map= in the visual and operator states. They default to =I= and =A= respectively. =:next-key= and =:last-key= can also be specified.
+#+begin_src emacs-lisp
+(targets-setup t :last-key "L" :around-key (kbd "C-a"))
+#+end_src
+
+Note that =:next-key=, =:last-key=, and the binding behavior can all be overridden for an individual entry in =targets-text-objects=. =targets-text-objects= is composed of =targets-pair-text-objects=, =targets-quote-text-objects=, =targets-separator-text-objects=, and =targets-object-text-objects=. If you would like to modify the default text objects, you can set any of these before loading targets.
+#+begin_src emacs-lisp
+(setq targets-quote-text-objects
+  '((single-quote "'" nil quote :next-key "N")
+    (double-quote "\"" nil quote :last-key "L")
+    (smart-single-quote "‘" "’" quote :bind nil)
+    ...))
+#+end_src
+
+After targets has loaded, you can still add items to and remove items from =targets-text-objects= before running ~targets-setup~.
+
+** Example Use-package Setup
+#+begin_src emacs-lisp
+(use-package targets
+  :load-path "path/to/targets.el"
+  :init
+  (setq targets-pair-text-objects
+        '((paren "(" ")" pair :more-keys "b")
+          (bracket "[" "]" pair :more-keys "r")
+          (curly "{" "}" pair :more-keys "c")
+          (angle "<" ">" pair)))
+
+  :config
+  (targets-setup t))
+#+end_src
+* Inspiration
+- [[https://github.com/wellle/targets.vim][wellle/targets.vim]] vim plugin
+- [[https://github.com/rhysd/vim-textobj-anyblock][rhysd/vim-textobj-anyblock]] vim plugin
+- [[https://github.com/paradigm/TextObjectify][paradigm/TextObjectify]] vim plugin
+- [[https://github.com/terryma/vim-expand-region][terryma/vim-expand-region]] vim plugin
+- [[https://redd.it/5fotth][this]] reddit thread

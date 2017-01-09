@@ -438,7 +438,7 @@ The point is not restored in visual state."
                                                              ,last-key))))))))))
 
 ;;;###autoload
-(cl-defmacro targets-setup (&optional bind
+(cl-defmacro targets-setup (&optional bind &key
                                       (inside-key "I")
                                       (around-key "A")
                                       (next-key "n")
