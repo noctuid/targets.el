@@ -72,21 +72,21 @@ This is the main way provided by this package for creating text objects in bulk.
 
 Here is a basic example with all the required arguments:
 #+begin_src emacs-lisp
-(targets-define-to 'paren "(" ")" 'pair)
+(targets-define-to paren "(" ")" pair)
 #+end_src
 This will result in the creation of 16 text objects (=inner=, =a=, =inside=, =around=, and the next, last, and remote versions of these).
 
 The first argument is a symbol that will be used when naming the new text objects. The next two arguments specify the delimiters for the text objects. The fourth arguments specifies the type of the text objects. The names for the types are =pair=, =quote=, =separator=, and =object=. Only =pair= will use the closing delimiter. The opening delimiter should always be a string except for an =object=, for which it should be the symbol corresponding to the thing.
 #+begin_src emacs-lisp
-(targets-define-to 'double-quote "\"" nil 'quote)
-(targets-define-to 'comma "," nil 'separator)
-(targets-define-to 'word 'evil-word nil 'object)
+(targets-define-to double-quote "\"" nil quote)
+(targets-define-to comma "," nil separator)
+(targets-define-to word 'evil-word nil object)
 #+end_src
 
 ~targets-define-to~ accepts additional keyword arguments. Specifying =bind= as non-nil will also bind the created text objects. By default, text objects are bound to the opening delimiter (and closing delimiter for pairs, e.g =i(=, =i)=, =a(=, =a)=, etc.). If the delimiters are regexps or the type is =object=, =:keys= must be explicitly specified. =:keys= completely replaces the default keys, and =:more-keys= adds to them. Both can be either a single key or a list of keys. =:next-key= and =:last-key= can also be specified.
 #+begin_src emacs-lisp
-(targets-define-to 'paren "(" ")" 'pair :bind t :more-keys "r" :last-key "p")
-(targets-define-to 'word 'evil-word nil 'object :bind t :keys "w")
+(targets-define-to paren "(" ")" pair :bind t :more-keys "r" :last-key "p")
+(targets-define-to word 'evil-word nil object :bind t :keys "w")
 #+end_src
 ** ~targets-define-composite-to~
 Not yet implemented.
