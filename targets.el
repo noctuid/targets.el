@@ -63,12 +63,12 @@ prior to the seek should be added to the jump list."
     (smart-single-quote "‘" "’" quote :bind nil)
     (smart-double-quote "“" "”" quote :bind nil)
     (emacs-smart-single-quote "`" "'" quote :bind nil)
-    (back-quote "`" nil quote)
-    (comma "," nil separator)
-    (period "." nil separator)))
+    (back-quote "`" nil quote)))
 
 (defvar targets-separator-text-objects
-  '((semi-colon ";" nil separator)
+  '((comma "," nil separator)
+    (period "." nil separator)
+    (semi-colon ";" nil separator)
     (colon ":" nil separator)
     (plus "+" nil separator)
     (hyphen "-" nil separator)
