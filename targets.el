@@ -28,10 +28,12 @@
 
 ;; For more information see the README in the github repo.
 
+;; TODO gensyms/once-only and debug declarations
 ;;; Code:
 (require 'cl-lib)
 (require 'evil)
 
+;;; * Settings
 (defgroup targets nil
   "Provides extensions to evil's text objects."
   :group 'evil
@@ -97,6 +99,7 @@ prior to the seek should be added to the jump list."
   "A list of text objects to be definite with `targets-setup'.
 Each item should be a valid arglist for `targets-define-to'.")
 
+;;; * User-customizable Functions
 (defun targets-push-jump-p (old-pos new-pos)
   "Whether or not to push to the evil jump list after a successful seek.
 This default function will push to the jump list when OLD-POS and NEW-POS are
@@ -104,39 +107,65 @@ not on the same line. Override or redefine this function to change this behavior
 or change `targets-seek-functions' completely instead."
   (not (= (line-number-at-pos old-pos) (line-number-at-pos new-pos))))
 
-(defun targets-seek-forward (open _ type &optional count &rest _)
-  "Seek forward to the text object specified by OPEN and TYPE COUNT times."
+(defun targets-bound (&optional backwards)
+  "Return the bound to be used when seeking forwards or backwards.
+BACKWARDS specifies that the bound should be for seeking backwards. This
+function is used both when there is no text object at the point and for next and
+last text objects. This default function bounds seeking to the beginning and end
+of the window. Override or redefine this function to change this behavior or
+change `targets-seek-functions' completely instead."
+  (if backwards
+      (window-start)
+    (window-end)))
+
+;;; * Seeking Functions
+(defun targets-seek-forward (open _ type &optional count bound)
+  "Seek forward to the text object specified by OPEN and TYPE COUNT times.
+If BOUND is non-nil, do not seek beyond BOUND. If successful, this function will
+move the point to beginning of the match and return its position."
   (setq count (or count 1))
-  (let ((orig-pos (point)))
+  (setq bound (or bound (targets-bound) (point-max)))
+  (let ((orig-pos (point))
+        case-fold-search)
     (cl-case type
       ((pair separator)
-       (re-search-forward (regexp-quote open) nil t count))
+       (forward-char)
+       (if (and (<= (point) bound)
+                (re-search-forward (regexp-quote open) bound t count))
+           (goto-char (match-beginning 0))
+         (backward-char)))
       (quote
        (let ((evil-forward-quote-char (string-to-char open)))
-         (ignore-errors
-           (end-of-thing 'evil-quote))
+         (ignore-errors (end-of-thing 'evil-quote))
          ;; count is broken for evil-forward-quote
          (let ((pos (point)))
            (dotimes (_ count)
              (forward-thing 'evil-quote))
-           (if (= (point) pos)
+           (if (or (= (point) pos)
+                   (> (point) bound))
                (goto-char orig-pos)
-             (forward-char -1)))))
-      ;; this happens for next/last text objects not after normal failure
+             (beginning-of-thing 'evil-quote)))))
       (object
-       (end-of-thing open)
+       (ignore-errors (end-of-thing open))
        (let ((pos (point)))
          (forward-thing open count)
-         (if (= (point) pos)
-             (goto-char orig-pos)
-           (beginning-of-thing open)))))
-    (targets-push-jump-p orig-pos (point))))
+         (when (or (= (point) pos)
+                   (> (point) bound)
+                   ;; may not actually be at thing
+                   ;; TODO guarunteed to return non-nil on success?
+                   ;; seems to be the case
+                   (not (ignore-errors (beginning-of-thing open))))
+           (goto-char orig-pos)))))
+    (unless (= (point) orig-pos)
+      (point))))
 
-(defun targets-seek-backward (open close type &optional count &rest _)
+(defun targets-seek-backward (open close type &optional count bound)
   "Seek backward to the text object specified by OPEN, CLOSE, and TYPE COUNT
-times."
+times. If successful, return the matched position (otherwise nil)."
   (setq count (or count 1))
-  (let ((orig-pos (point)))
+  (setq bound (or bound (targets-bound t) (point-min)))
+  (let ((orig-pos (point))
+        case-fold-search)
     (cl-case type
       (pair
        (let* ((last-pos orig-pos)
@@ -153,7 +182,7 @@ times."
                                     "\\)")))
          (cl-dotimes (_ count)
            (let ((prev-paren (save-excursion
-                               (re-search-backward quote-regexp nil t)
+                               (re-search-backward quote-regexp bound t)
                                (point)))
                  (open-paren (save-excursion
                                (if parenp
@@ -166,11 +195,14 @@ times."
                (cl-return-from nil))
              (goto-char prev-paren)
              (when (and open-paren (= prev-paren open-paren))
-               (re-search-backward quote-regexp nil t))
+               (re-search-backward quote-regexp bound t)
+               (when (= (point) prev-paren)
+                 (cl-return-from nil)))
              (setq last-pos (point))))))
       (separator
-       (when (re-search-backward (regexp-quote open) nil t count)
-         (forward-char -1)))
+       (when (re-search-backward (regexp-quote open) bound t count)
+         ;; required to not select current separator
+         (backward-char)))
       (quote
        (let* ((evil-forward-quote-char (string-to-char open))
               (bnd (bounds-of-thing-at-point 'evil-quote)))
@@ -178,44 +210,137 @@ times."
                     ;; the char after the string is given in the bnd
                     (not (= (point) (cdr bnd))))
            (goto-char (car bnd)))
-         (if (= -1 (forward-thing 'evil-quote (- count)))
-             (goto-char orig-pos)
-           (forward-char 1))))
+         (when (or (= -1 (forward-thing 'evil-quote (- count)))
+                   (< (point) bound))
+           (goto-char orig-pos))))
       (object
-       (beginning-of-thing open)
+       (ignore-errors (beginning-of-thing open))
        (let ((pos (point)))
          (forward-thing open (- count))
-         (if (= (point) pos)
-             (goto-char orig-pos)
-           ;; may be redundant for some things (e.g. evil-word)
-           (beginning-of-thing open)))))
-    (targets-push-jump-p orig-pos (point))))
+         (when (or (= (point) pos)
+                   (< (point) bound)
+                   (not (ignore-errors (beginning-of-thing open))))
+           (goto-char orig-pos)))))
+    (unless (= (point) orig-pos)
+      (point))))
 
-;; TODO gensyms/once-only
+(defvar targets--reset-position nil)
 
-(defmacro targets--repeat-with-seeking
-    (open close type select-form &optional seek-functions)
-  "Return the range of the text object specified by OPEN, CLOSE, and TYPE.
-SELECT-FORM is the form used to determine this range. If it is unsuccessful,
-seek using the functions in SEEK-FUNCTIONS to attempt to find the text object.
-If the last seek function run returns a non-nil value, push the point to the
-jump list."
-  `(let ((last-pos (point))
-         (seek-functions (or ,seek-functions targets-seek-functions))
-         (range (ignore-errors ,select-form))
-         push-jump-p)
-     (when (and range
-                (or (> (car range) last-pos)
-                    (< (cadr range) last-pos)))
-       (setq range nil))
-     ;; intentional capture; discard visual information when seeking
-     (setq beg nil end nil)
-     (while (and (not range) seek-functions)
-       (setq push-jump-p (funcall (pop seek-functions) ,open ,close ,type))
-       (setq range (ignore-errors ,select-form)))
-     (when (and range push-jump-p)
-       (evil-set-jump))
-     range))
+(defun targets--reset-position ()
+  "Called after next and last text objects to restore the cursor position.
+The point is not restored if there is a selection."
+  (unless (region-active-p)
+    (when targets--reset-position
+      (jump-to-register 'targets--reset-position)
+      (setq targets--reset-position nil))))
+
+;;; * Text Object Definers
+(defun targets--select-to (to-type select-type linewise open close beg end type
+                                   count)
+  "Return a range corresponding to the matched text object.
+The text object is specified by TO-TYPE (pair, quote, separator, or object),
+SELECT-TYPE (inner, a, inside, or around), LINEWISE, OPEN, and CLOSE. BEG, END,
+and TYPE specify visual selection information. COUNT is the number of text
+objects."
+  (let* ((open-char (cl-case to-type
+                      (pair (when (and (= (length open) 1)
+                                       (= (length close) 1))
+                              (string-to-char open)))
+                      (quote (string-to-char open))))
+         (close-char (when (and open-char (eq to-type 'pair))
+                       (string-to-char close)))
+         (inclusive (when (memq select-type '(a around))
+                      t))
+         (range
+          (save-excursion
+            (cl-case to-type
+              (pair
+               (evil-select-paren (or open-char open) (or close-char close)
+                                  beg end type count inclusive))
+              (separator
+               (if inclusive
+                   (let ((range
+                          (evil-select-paren open open beg end type count t)))
+                     ;; reduce range
+                     (when range
+                       (setf (cadr range) (1- (cadr range))))
+                     range)
+                 (evil-select-paren open open beg end type count)))
+              (quote
+               (if inclusive
+                   ;; because don't want whitespace
+                   (let ((range
+                          (evil-select-quote open-char beg end type count)))
+                     (when range
+                       ;; expand range
+                       (setf (car range) (1- (car range))
+                             (cadr range) (1+ (cadr range))))
+                     range)
+                 (evil-select-quote open-char beg end type count)))
+              (object
+               (if inclusive
+                   (evil-select-an-object open beg end type count linewise)
+                 (evil-select-inner-object open beg end type count
+                                           linewise)))))))
+    (when range
+      (save-excursion
+        (when (and (not inclusive)
+                   (not (eq to-type 'object))
+                   (looking-at (regexp-quote open)))
+          ;; so point will still be inside range for inner text objects
+          (goto-char (match-end 0)))
+        ;; ignore range when evil seeks
+        (unless (or (> (car range) (point))
+                    (< (cadr range) (point)))
+          (cl-case select-type
+            ((inner a linewise)
+             range)
+            (inside
+             (goto-char (car range))
+             (skip-chars-forward " \t")
+             (setf (car range) (point))
+             (goto-char (cadr range))
+             (skip-chars-backward " \t")
+             (setf (cadr range) (point))
+             range)
+            (around
+             (when (eq to-type 'separator)
+               (setf (cadr range) (1+ (cadr range))))
+             (goto-char (cadr range))
+             (skip-chars-forward " \t")
+             (cond ((= (point) (cadr range))
+                    (goto-char (car range))
+                    (skip-chars-backward " \t")
+                    (setf (car range) (point)))
+                   (t
+                    (setf (cadr range) (point))))
+             range)))))))
+
+(defun targets--select-to-with-seeking
+    (to-type select-type linewise open close beg end type count)
+  "Return a range corresponding to the matched text object.
+If unsuccessful, seek using the functions in `targets-seek-functions' to attempt
+to find a matching text object. Push the initial position when seeking if
+`targets-push-jump' run with the inital and final positions returns non-nil. See
+`targets--select-to' for more details."
+  (let ((seek-functions targets-seek-functions)
+        (orig-pos (point))
+        push-jump-p)
+    (while (and (not
+                 (setq range
+                       (ignore-errors
+                         (save-excursion
+                           (targets--select-to to-type select-type linewise open
+                                               close beg end type count)))))
+                seek-functions)
+      (goto-char orig-pos)
+      (funcall (pop seek-functions) open close to-type)
+      (setq push-jump-p (targets-push-jump-p orig-pos (point)))
+      ;; discard visual info if seeking
+      (setq beg nil end nil))
+    (when (and range push-jump-p)
+      (evil-set-jump orig-pos))
+    range))
 
 (defun targets--define-keys (keymap function prefix keys)
   "In KEYMAP, bind multiple keys to FUNCTION.
@@ -223,23 +348,8 @@ The keys are created by using PREFIX to prefix each key in KEYS."
   (while keys
     (define-key keymap (concat prefix (pop keys)) function)))
 
-(defvar targets--reset-position nil)
-(defvar targets--reset-from-next-p nil)
-(defvar targets--non-destructive-operators '(evil-yank))
-
-(defun targets--reset-position ()
-  "Called after next and last text objects to restore the cursor position.
-The point is not restored in visual state."
-  (when (and targets--reset-position
-             (not (evil-visual-state-p)))
-    (if targets--reset-from-next-p
-        (goto-char targets--reset-position)
-      (jump-to-register 'targets--reset-position))
-    (setq targets--reset-position nil)))
-
 ;;;###autoload
 (cl-defmacro targets-define-to (name open close to-type &key
-                                     seek-functions
                                      linewise
                                      mode
                                      bind
@@ -247,6 +357,19 @@ The point is not restored in visual state."
                                      (last-key "l")
                                      keys
                                      more-keys)
+  "The main text object definition facility provided by targets.
+NAME is used to name the resulting text objects (e.g. targets-inner-NAME). OPEN,
+CLOSE, and TO-TYPE hold the required information to create the text objects.
+TO-TYPE is one of pair, quote, separator, or object. OPEN and CLOSE should be
+strings. CLOSE is only used for pair text objects. LINEWISE is only used for
+object type text objects.
+
+If BIND is non-nil, additionally bind all of the created text objects. NEXT-KEY
+and LAST-KEY can be changed to alter the intermediate keys used for next and
+last text objects. IF KEYS is not specified, it will default to OPEN and CLOSE.
+If TO-TYPE is object or OPEN or CLOSE are regexps/multiple characters (for
+TO-TYPE pair or separator), KEYS must be specified if BIND is non-nil. MORE-KEYS
+can be used to specify keys to be used in addtion to OPEN/CLOSE."
   (let* ((name (if (symbolp name)
                    (symbol-name name)
                  name))
@@ -268,7 +391,18 @@ The point is not restored in visual state."
                             (concat "targets-inside-last-" mode name)))
          (last-around-name (intern
                             (concat "targets-around-last-" mode name)))
-
+         (select-inner `(targets--select-to-with-seeking
+                         ',to-type 'inner ,linewise ,open ,close beg end type
+                         count))
+         (select-a `(targets--select-to-with-seeking
+                     ',to-type 'a ,linewise ,open ,close beg end type count))
+         ;; linewise is only applicable for objects (no inside/around for)
+         (select-inside `(targets--select-to-with-seeking
+                          ',to-type 'inside nil ,open ,close
+                          beg end type count))
+         (select-around `(targets--select-to-with-seeking
+                          ',to-type 'around nil ,open ,close
+                          beg end type count))
          (more-keys (when more-keys
                       (if (listp more-keys)
                           more-keys
@@ -281,130 +415,64 @@ The point is not restored in visual state."
                    (pair (list open close))
                    ((quote separator)
                     (list open)))))
-         (keys (append keys more-keys))
-         (open-char (cl-case to-type
-                      (pair (when (and (= (length open) 1)
-                                       (= (length close) 1))
-                              (string-to-char open)))
-                      (quote (string-to-char open))))
-         (close-char (when (and open-char (eq to-type 'pair))
-                       (string-to-char close)))
-         (thing open))
+         (keys (append keys more-keys)))
     `(progn
        (evil-define-text-object ,inner-name (count &optional beg end type)
          ,(concat "Select inner " name ".")
-         (targets--repeat-with-seeking
-          ,open ,close ',to-type
-          ,(cl-case to-type
-             (pair
-              `(evil-select-paren ,(or open-char open) ,(or close-char close)
-                                  beg end type count))
-             (separator
-              `(evil-select-paren ,open ,open beg end type count))
-             (quote
-              `(evil-select-quote ,open-char beg end type count))
-             (object
-              `(evil-select-inner-object ,thing beg end type count ,linewise)))
-          ,seek-functions))
+         ,select-inner)
 
        (evil-define-text-object ,a-name (count &optional beg end type)
          ,(concat "Select a " name ".")
-         (targets--repeat-with-seeking
-          ,open ,close ',to-type
-          ,(cl-case to-type
-             (pair
-              `(evil-select-paren ,(or open-char open) ,(or close-char close)
-                                  beg end type count t))
-             (quote
-              `(let ((range
-                      (evil-select-quote ,open-char beg end type count)))
-                 (when range
-                   ;; expand range
-                   (setf (car range) (1- (car range))
-                         (cadr range) (1+ (cadr range))))
-                 range))
-             (separator
-              `(let ((range
-                      (evil-select-paren ,open ,open beg end type count t)))
-                 ;; reduce range
-                 (when range
-                   (setf (cadr range) (1- (cadr range))))
-                 range))
-             (object
-              `(evil-select-an-object ,thing beg end type count ,linewise)))
-          ,seek-functions))
+         ,select-a)
 
        ,(unless (eq to-type 'object)
           `(evil-define-text-object ,inside-name (count &optional beg end type)
              ,(concat "Select inside " name ".")
-             (let ((range (,inner-name count beg end type)))
-               (when range
-                 (setq range (append range (list :expanded t)))
-                 (goto-char (car range))
-                 (skip-chars-forward " \t")
-                 (setf (car range) (point))
-                 (goto-char (cadr range))
-                 (skip-chars-backward " \t")
-                 (setf (cadr range) (point)))
-               range)))
+             ,select-inside))
 
        ,(unless (eq to-type 'object)
           `(evil-define-text-object ,around-name (count &optional beg end type)
              ,(concat "Select around " name ".")
-             (let ((range (,a-name count beg end type)))
-               (when range
-                 (setq range (append range (list :expanded t)))
-                 ,(when (eq to-type 'separator)
-                    '(setf (cadr range) (1+ (cadr range))))
-                 (goto-char (cadr range))
-                 (skip-chars-forward " \t")
-                 (cond ((= (point) (cadr range))
-                        (goto-char (car range))
-                        (skip-chars-backward " \t")
-                        (setf (car range) (point)))
-                       (t
-                        (setf (cadr range) (point)))))
-               range)))
-
-       ,@(mapcar (lambda (info)
-                   `(evil-define-text-object ,(cl-first info)
-                      (count &optional beg end type)
-                      ,(concat "Select" (cl-third info) name ".")
-                      (setq targets--reset-position (point)
-                            targets--reset-from-next-p t)
-                      (targets-seek-forward ,open ,close ',to-type count)
-                      ;; purposely don't give visual info since seeking
-                      (let ((range (,(cl-second info))))
-                        (when range
-                          (append range (list :expanded t))))))
-                 (append
-                  (list (list next-inner-name inner-name " the next inner ")
-                        (list next-a-name a-name " the next outer "))
-                  (unless (eq to-type 'object)
-                    (list
-                     (list next-inside-name inside-name " inside the next ")
-                     (list next-around-name around-name " around the next ")))))
+             ,select-around))
 
        ,@(mapcar (lambda (info)
                    `(evil-define-text-object ,(cl-first info)
                       (count &optional beg end type)
                       ,(concat "Select" (cl-third info) name ".")
                       (point-to-register 'targets--reset-position)
-                      (setq targets--reset-position t
-                            targets--reset-from-next-p nil)
-                      (targets-seek-backward ,open ,close ',to-type count)
-                      (let ((range (,(cl-second info))))
-                        (when range
-                          (append range (list :expanded t))))))
+                      (setq targets--reset-position t)
+                      (when (targets-seek-forward ,open nil ',to-type count)
+                        ;; purposely don't give visual info since seeking
+                        (setq beg nil end nil)
+                        ;; count should only be used for seeking
+                        (setq count 1)
+                        ,(cl-second info))))
                  (append
-                  (list (list last-inner-name inner-name " the last inner " nil)
-                        (list last-a-name a-name " the last outer " t))
+                  (list (list next-inner-name select-inner " the next inner ")
+                        (list next-a-name select-a " the next outer "))
                   (unless (eq to-type 'object)
                     (list
-                     (list last-inside-name inside-name " inside the last "
-                           nil)
-                     (list last-around-name around-name " around the last "
-                           t)))))
+                     (list next-inside-name select-inside " inside the next ")
+                     (list next-around-name select-around
+                           " around the next ")))))
+
+       ,@(mapcar
+          (lambda (info)
+            `(evil-define-text-object ,(cl-first info)
+               (count &optional beg end type)
+               ,(concat "Select" (cl-third info) name ".")
+               (point-to-register 'targets--reset-position)
+               (setq targets--reset-position t)
+               (when (targets-seek-backward ,open ,close ',to-type count)
+                 (setq beg nil end nil count 1)
+                 ,(cl-second info))))
+          (append
+           (list (list last-inner-name select-inner " the last inner ")
+                 (list last-a-name select-a " the last outer "))
+           (unless (eq to-type 'object)
+             (list
+              (list last-inside-name select-inside " inside the last ")
+              (list last-around-name select-around " around the last ")))))
        ,(when bind
           `(progn
              ,@(mapcar (lambda (info)
@@ -437,6 +505,9 @@ The point is not restored in visual state."
                            `(targets-around-text-objects-map #',last-around-name
                                                              ,last-key))))))))))
 
+;;; * Setup
+(add-hook 'post-command-hook #'targets--reset-position)
+
 ;;;###autoload
 (cl-defmacro targets-setup (&optional bind &key
                                       (inside-key "I")
@@ -458,11 +529,12 @@ The point is not restored in visual state."
      (define-key evil-outer-text-objects-map ,last-key nil)
      ;; add post command hook
      ,@(mapcar (lambda (to-args)
-                 `(targets-define-to ,@(append to-args (list :bind bind
-                                                             :next-key next-key
-                                                             :last-key last-key))))
-               targets-text-objects)
-     (add-hook 'post-command-hook #'targets--reset-position)))
+                 `(targets-define-to ,@(append to-args
+                                               (list :bind bind
+                                                     :next-key next-key
+                                                     :last-key last-key))))
+               targets-text-objects)))
+
 
 (provide 'targets)
 ;;; targets.el ends here
