@@ -163,7 +163,7 @@ times."
                                (unless (= (point) 1)
                                  (point)))))
              (when (= prev-paren last-pos)
-               (return-from nil))
+               (cl-return-from nil))
              (goto-char prev-paren)
              (when (and open-paren (= prev-paren open-paren))
                (re-search-backward quote-regexp nil t))
