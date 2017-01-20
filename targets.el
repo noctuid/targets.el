@@ -104,7 +104,7 @@ not on the same line. Override or redefine this function to change this behavior
 or change `targets-seek-functions' completely instead."
   (not (= (line-number-at-pos old-pos) (line-number-at-pos new-pos))))
 
-(defun targets-seek-forward (open _ type &optional count &rest _)
+(defun targets-seek-forward (open _ type &optional count &rest _unused)
   "Seek forward to the text object specified by OPEN and TYPE COUNT times."
   (setq count (or count 1))
   (let ((orig-pos (point)))
