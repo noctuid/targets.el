@@ -99,7 +99,9 @@ Not yet implemented.
 * Configuration
 ~targets-setup~ can be used to create and optionally bind all the text objects specified in =targets-text-objects=. =targets-text-objects= is a list of lists of arguments to be passed to ~targets-define-to~.
 
-When run without any arguments, ~targets-setup~ will only create the text objects. It takes an optional, positional argument that specifies whether text objects should also be bound to keys. Keyword arguments can be used to customize the keys used in the bindings. =:inside-key= and =:around-key= determine what keys are bound to =targets-inside-text-objects-map= and =targets-around-text-objects-map= in the visual and operator states. They default to =I= and =A= respectively. =:next-key=, =:last-key=, and =:remote-key= can also be specified.
+When run without any arguments, ~targets-setup~ will only create the text objects. It takes an optional, positional argument that specifies whether text objects should also be bound to keys. Keyword arguments can be used to customize the keys used in the bindings. =:inside-key= and =:around-key= determine what keys are bound to =targets-inside-text-objects-map= and =targets-around-text-objects-map= in the visual and operator states. They default to =I= and =A= respectively. If they are not changed from their defaults, they will be bound in a way such that =I= and =A= will continue to work as normal with a visual block selection
+
+=:next-key=, =:last-key=, and =:remote-key= can also be specified.
 #+begin_src emacs-lisp
 (targets-setup t :last-key "L" :around-key (kbd "C-a"))
 ;; don't bind remote text objects

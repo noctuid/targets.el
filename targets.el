@@ -678,6 +678,51 @@ used to specify keys to be used in addtion to OPEN/CLOSE."
 ;;; * Setup
 (add-hook 'post-command-hook #'targets--reset-position)
 
+(defun targets--setup (inside-key around-key next-key last-key remote-key)
+  "Set up basic configuration for targets.el.
+See `targets-setup' for more details."
+  ;; bind inside and around keymaps
+  (when inside-key
+    (define-key evil-operator-state-map
+      inside-key targets-inside-text-objects-map)
+    (if (string= inside-key "I")
+        (define-key evil-visual-state-map
+          inside-key '(menu-item
+                       "maybe-targets-inside-text-objects-map"
+                       nil
+                       :filter (lambda (&optional _)
+                                 (if (eq (evil-visual-type) 'block)
+                                     #'evil-insert
+                                   targets-inside-text-objects-map))))
+      (define-key evil-visual-state
+        inside-key targets-inside-text-objects-map)))
+
+  (when around-key
+    (define-key evil-operator-state-map
+      around-key targets-around-text-objects-map)
+    (if (string= around-key "A")
+        (define-key evil-visual-state-map
+          around-key '(menu-item
+                       "maybe-targets-around-text-objects-map"
+                       nil
+                       :filter (lambda (&optional _)
+                                 (if (eq (evil-visual-type) 'block)
+                                     #'evil-append
+                                   targets-around-text-objects-map))))
+      (define-key evil-visual-state
+        around-key targets-around-text-objects-map)))
+
+  ;; unbind intermediate keys
+  (when next-key
+    (define-key evil-inner-text-objects-map next-key nil)
+    (define-key evil-outer-text-objects-map next-key nil))
+  (when last-key
+    (define-key evil-inner-text-objects-map last-key nil)
+    (define-key evil-outer-text-objects-map last-key nil))
+  (when remote-key
+    (define-key evil-inner-text-objects-map remote-key nil)
+    (define-key evil-outer-text-objects-map remote-key nil)))
+
 ;;;###autoload
 (cl-defmacro targets-setup (&optional bind &key
                                       (inside-key "I")
@@ -685,27 +730,20 @@ used to specify keys to be used in addtion to OPEN/CLOSE."
                                       (next-key "n")
                                       (last-key "l")
                                       (remote-key "r"))
+  "Perform basic setup for targets.el.
+All text objects in `targets-text-objects' are created and optionally bound.
+BIND, NEXT-KEY, LAST-KEY, and REMOTE-KEY are all passed to `targets-define-to'.
+They can be individually overridden in the entries in `targets-text-objects'.
+INSIDE-KEY and AROUND-KEY are bound to `targets-inside-text-objects-map' and
+`targets-around-text-objects-map' respectively. If they are not changed from
+their default \"I\" and \"A\", they will be bound for the char and line visual
+types but not for the block visual type. If NEXT-KEY, LAST-KEY, or REMOTE-KEY
+are specified as nil, the corresponding text objects will not be bound.
+Otherwise, those intermediate keys will be unbound before `targets-define-to' is
+run."
   `(progn
-     (define-key evil-visual-state-map
-       ,inside-key targets-inside-text-objects-map)
-     (define-key evil-operator-state-map
-       ,inside-key targets-inside-text-objects-map)
-     (define-key evil-visual-state-map
-       ,around-key targets-around-text-objects-map)
-     (define-key evil-operator-state-map
-       ,around-key targets-around-text-objects-map)
-     ,(when next-key
-        `(progn
-           (define-key evil-inner-text-objects-map ,next-key nil)
-           (define-key evil-outer-text-objects-map ,next-key nil)))
-     ,(when last-key
-        `(progn
-           (define-key evil-inner-text-objects-map ,last-key nil)
-           (define-key evil-outer-text-objects-map ,last-key nil)))
-     ,(when remote-key
-        `(progn
-           (define-key evil-inner-text-objects-map ,remote-key nil)
-           (define-key evil-outer-text-objects-map ,remote-key nil)))
+     (targets--setup ,inside-key ,around-key ,next-key ,last-key ,remote-key)
+     ;; create and bind text objects
      ,@(mapcar (lambda (to-args)
                  `(targets-define-to ,@(append to-args
                                                (list :bind bind
