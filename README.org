@@ -84,10 +84,10 @@ The first argument is a symbol that will be used when naming the new text object
 (targets-define-to word 'evil-word nil object)
 #+end_src
 
-~targets-define-to~ accepts additional keyword arguments. Specifying =bind= as non-nil will also bind the created text objects. By default, text objects are bound to the opening delimiter (and closing delimiter for pairs, e.g =i(=, =i)=, =a(=, =a)=, etc.). If the delimiters are regexps or the type is =object=, =:keys= must be explicitly specified. =:keys= completely replaces the default keys, and =:more-keys= adds to them. Both can be either a single key or a list of keys. =:next-key=, =:last-key=, and =:remote-key= can also be specified to change the intermediate keys used from their defaults.
+~targets-define-to~ accepts additional keyword arguments. Specifying =bind= as non-nil will also bind the created text objects. By default, text objects are bound to the opening delimiter (and closing delimiter for pairs, e.g =i(=, =i)=, =a(=, =a)=, etc.). If the delimiters are regexps or the type is =object=, =:keys= must be explicitly specified. =:keys= completely replaces the default keys, and =:more-keys= adds to them. Both can be either a single key or a list of keys. =:next-key=, =:last-key=, and =:remote-key= can also be specified to change the intermediate keys used from their defaults. If any of them is set to =nil=, those text objects will not be bound.
 #+begin_src emacs-lisp
 (targets-define-to paren "(" ")" pair
-                   :bind t :more-keys "r" :last-key "p" :remote-key "R")
+                   :bind t :more-keys "r" :last-key "p" :remote-key nil)
 (targets-define-to word 'evil-word nil object :bind t :keys "w")
 #+end_src
 ** ~targets-define-composite-to~
@@ -99,9 +99,11 @@ Not yet implemented.
 * Configuration
 ~targets-setup~ can be used to create and optionally bind all the text objects specified in =targets-text-objects=. =targets-text-objects= is a list of lists of arguments to be passed to ~targets-define-to~.
 
-When run without any arguments, ~targets-setup~ will only create the text objects. It takes an optional, positional argument that specifies whether text objects should also be bound to keys. Keyword arguments can be used to customize the keys used in the bindings. =:inside-key= and =:around-key= determine what keys are bound to =targets-inside-text-objects-map= and =targets-around-text-objects-map= in the visual and operator states. They default to =I= and =A= respectively. =:next-key= and =:last-key= can also be specified.
+When run without any arguments, ~targets-setup~ will only create the text objects. It takes an optional, positional argument that specifies whether text objects should also be bound to keys. Keyword arguments can be used to customize the keys used in the bindings. =:inside-key= and =:around-key= determine what keys are bound to =targets-inside-text-objects-map= and =targets-around-text-objects-map= in the visual and operator states. They default to =I= and =A= respectively. =:next-key=, =:last-key=, and =:remote-key= can also be specified.
 #+begin_src emacs-lisp
 (targets-setup t :last-key "L" :around-key (kbd "C-a"))
+;; don't bind remote text objects
+(targets-setup t :remote-key nil)
 #+end_src
 
 Note that =:next-key=, =:last-key=, =:remote-key=, and the binding behavior can all be overridden for an individual entry in =targets-text-objects=. =targets-text-objects= is composed of =targets-pair-text-objects=, =targets-quote-text-objects=, =targets-separator-text-objects=, and =targets-object-text-objects=. If you would like to modify the default text objects, you can set any of these before loading targets.

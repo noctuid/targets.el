@@ -455,8 +455,13 @@ to find a matching text object. Push the initial position when seeking if
 (defun targets--define-keys (keymap function prefix keys)
   "In KEYMAP, bind multiple keys to FUNCTION.
 The keys are created by using PREFIX to prefix each key in KEYS."
-  (while keys
-    (define-key keymap (concat prefix (pop keys)) function)))
+  (when prefix
+    (while keys
+      (define-key keymap (concat (if (stringp prefix)
+                                     prefix
+                                   nil)
+                                 (pop keys))
+        function))))
 
 ;;;###autoload
 (cl-defmacro targets-define-to (name open close to-type &key
@@ -475,12 +480,13 @@ TO-TYPE is one of pair, quote, separator, or object. OPEN and CLOSE should be
 strings. CLOSE is only used for pair text objects. LINEWISE is only used for
 object type text objects.
 
-If BIND is non-nil, additionally bind all of the created text objects. NEXT-KEY
-and LAST-KEY can be changed to alter the intermediate keys used for next and
-last text objects. IF KEYS is not specified, it will default to OPEN and CLOSE.
-If TO-TYPE is object or OPEN or CLOSE are regexps/multiple characters (for
-TO-TYPE pair or separator), KEYS must be specified if BIND is non-nil. MORE-KEYS
-can be used to specify keys to be used in addtion to OPEN/CLOSE."
+If BIND is non-nil, additionally bind all of the created text objects. NEXT-KEY,
+LAST-KEY, and REMOTE-KEY can be changed to alter the intermediate keys used for
+next and last text objects. If they are nil, those text objects will not be
+bound at all. IF KEYS is not specified, it will default to OPEN and CLOSE. If
+TO-TYPE is object or OPEN or CLOSE are regexps/multiple characters (for TO-TYPE
+pair or separator), KEYS must be specified if BIND is non-nil. MORE-KEYS can be
+used to specify keys to be used in addtion to OPEN/CLOSE."
   (let* ((name (if (symbolp name)
                    (symbol-name name)
                  name))
@@ -637,8 +643,8 @@ can be used to specify keys to be used in addtion to OPEN/CLOSE."
                                                 ',keys))
                        (append
                         (list
-                         `(evil-inner-text-objects-map #',inner-name nil)
-                         `(evil-outer-text-objects-map #',a-name nil)
+                         `(evil-inner-text-objects-map #',inner-name t)
+                         `(evil-outer-text-objects-map #',a-name t)
                          `(evil-inner-text-objects-map #',next-inner-name
                                                        ,next-key)
                          `(evil-outer-text-objects-map #',next-a-name
@@ -654,8 +660,8 @@ can be used to specify keys to be used in addtion to OPEN/CLOSE."
 
                         (unless (eq to-type 'object)
                           (list
-                           `(targets-inside-text-objects-map #',inside-name nil)
-                           `(targets-around-text-objects-map #',around-name nil)
+                           `(targets-inside-text-objects-map #',inside-name t)
+                           `(targets-around-text-objects-map #',around-name t)
                            `(targets-inside-text-objects-map #',next-inside-name
                                                              ,next-key)
                            `(targets-around-text-objects-map #',next-around-name
@@ -688,17 +694,24 @@ can be used to specify keys to be used in addtion to OPEN/CLOSE."
        ,around-key targets-around-text-objects-map)
      (define-key evil-operator-state-map
        ,around-key targets-around-text-objects-map)
-     (define-key evil-inner-text-objects-map ,next-key nil)
-     (define-key evil-inner-text-objects-map ,last-key nil)
-     (define-key evil-inner-text-objects-map ,remote-key nil)
-     (define-key evil-outer-text-objects-map ,next-key nil)
-     (define-key evil-outer-text-objects-map ,last-key nil)
-     (define-key evil-outer-text-objects-map ,remote-key nil)
+     ,(when next-key
+        `(progn
+           (define-key evil-inner-text-objects-map ,next-key nil)
+           (define-key evil-outer-text-objects-map ,next-key nil)))
+     ,(when last-key
+        `(progn
+           (define-key evil-inner-text-objects-map ,last-key nil)
+           (define-key evil-outer-text-objects-map ,last-key nil)))
+     ,(when remote-key
+        `(progn
+           (define-key evil-inner-text-objects-map ,remote-key nil)
+           (define-key evil-outer-text-objects-map ,remote-key nil)))
      ,@(mapcar (lambda (to-args)
                  `(targets-define-to ,@(append to-args
                                                (list :bind bind
                                                      :next-key next-key
-                                                     :last-key last-key))))
+                                                     :last-key last-key
+                                                     :remote-key remote-key))))
                targets-text-objects)))
 
 (provide 'targets)
