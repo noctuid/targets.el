@@ -8,4 +8,5 @@
 (development
  (depends-on "evil")
  (depends-on "cl-lib")
+ (depends-on "avy")
  (depends-on "buttercup"))

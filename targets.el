@@ -4,7 +4,7 @@
 ;; URL: https://github.com/noctuid/targets.el
 ;; Created: November 29, 2016
 ;; Keywords: evil text-object
-;; Package-Requires: ((cl-lib "0.5") (evil "1.1.0"))
+;; Package-Requires: ((cl-lib "0.5") (evil "1.1.0") (avy "0.4.0"))
 ;; Version: 0.1
 
 ;; This file is not part of GNU Emacs.
@@ -31,6 +31,7 @@
 ;; TODO gensyms/once-only and debug declarations
 ;;; Code:
 (require 'cl-lib)
+(require 'avy)
 (require 'evil)
 
 ;;; * Settings
@@ -98,6 +99,45 @@ prior to the seek should be added to the jump list."
           targets-object-text-objects)
   "A list of text objects to be definite with `targets-setup'.
 Each item should be a valid arglist for `targets-define-to'.")
+
+(defcustom targets-avy-style nil
+  "Method for displaying avy overlays.
+Use `avy-style' if nil."
+  :group 'targets
+  :type '(choice
+          (const :tag "Pre" pre)
+          (const :tag "At" at)
+          (const :tag "At Full" at-full)
+          (const :tag "Post" post)
+          (const :tag "De Bruijn" de-bruijn)))
+
+(defcustom targets-avy-keys nil 
+  "Keys used for selecting urls.
+Use `avy-keys' if nil."
+  :group 'targets
+  :type '(repeat :tag "Keys" (choice (character :tag "char"))))
+
+(defcustom targets-avy-background 'use-avy
+  "When non-nil, a gray background will be added during the selection.
+Use `avy-background' if 'use-avy."
+  :type 'boolean)
+
+(defcustom targets-avy-all-windows nil
+  "Determine the list of windows to consider in search of text objects.
+Use `avy-all-windows' if 'use-avy."
+  :type
+  '(choice
+    (const :tag "All Frames" all-frames)
+    (const :tag "This Frame" t)
+    (const :tag "This Window" nil)))
+
+(defcustom targets-avy-all-windows-alt nil
+  "The alternative `targets-avy-all-windows' for use with
+\\[universal-argument]. Use `avy-all-windows-alt' if 'use-avy."
+  :type '(choice
+          (const :tag "Current window" nil)
+          (const :tag "All windows on the current frame" t)
+          (const :tag "All windows on all frames" all-frames)))
 
 ;;; * User-customizable Functions
 (defun targets-push-jump-p (old-pos new-pos)
@@ -225,6 +265,7 @@ times. If successful, return the matched position (otherwise nil)."
       (point))))
 
 (defvar targets--reset-position nil)
+(defvar targets--reset-window nil)
 
 (defun targets--reset-position ()
   "Called after next and last text objects to restore the cursor position.
@@ -232,7 +273,76 @@ The point is not restored if there is a selection."
   (unless (region-active-p)
     (when targets--reset-position
       (jump-to-register 'targets--reset-position)
-      (setq targets--reset-position nil))))
+      (setq targets--reset-position nil))
+    (when targets--reset-window
+      (let* ((window targets--reset-window)
+             (frame (window-frame window)))
+        (unless (equal frame (selected-frame))
+          (select-frame-set-input-focus frame))
+        (select-window window))
+      (setq targets--reset-window nil))))
+
+;;; * Avy-related Functions
+(defun targets--collect-text-objects (open type select-func)
+  "Collect all locations of visible text objects based on OPEN and TYPE.
+SELECT-FUNC is used to determine if there is a text object at the beginning of
+the visible regions of the window as `targets-seek-foraward' will seek past the
+current text object."
+  (let (all-to-positions)
+    (avy-dowindows current-prefix-arg
+      (save-excursion
+        (dolist (bounds (avy--find-visible-regions (window-start) (window-end)))
+          (goto-char (car bounds))
+          (let ((current-window (get-buffer-window))
+                to-pos
+                to-positions)
+            ;; add a text object at the beginning of the window
+            ;; as the eol of an invisible line can be visible in org buffers,
+            ;; don't do this if the point is at the eol
+            (when (and (not (looking-at (rx eol)))
+                       (let ((range (funcall select-func)))
+                         (and range (>= (car range) (car bounds)))))
+              (push (cons (point) current-window) to-positions))
+            (while (setq to-pos (targets-seek-forward open nil type
+                                                      1 (cdr bounds)))
+              (push (cons to-pos current-window) to-positions)
+              (goto-char to-pos))
+            (setq all-to-positions (append all-to-positions
+                                           (nreverse to-positions)))))))
+    all-to-positions))
+
+(defun targets--save-point-and-jump (pos)
+  "Put the point in the targets--reset-position register nad jump to POS."
+  (point-to-register 'targets--reset-position)
+  (goto-char pos))
+
+(defun targets--avy-seek (command open _ type select-func)
+  "Seek to a text object specified by OPEN and TYPE using avy for selection.
+COMMAND will be used as the name given to `avy-with', so that `avy-styles-alist'
+and `avy-keys-alist' can be customize for COMMAND. SELECT-FUNC is used to
+determine if there is a text object at the beginning of the visible regions of
+the window. A text object at the beginning of the window will only included if
+it starts at or after the beginning of the window."
+  (let ((avy-style (or targets-avy-style avy-style))
+        (avy-keys (or targets-avy-keys avy-keys))
+        (avy-background (if (eq targets-avy-background 'use-avy)
+                            avy-background
+                          targets-avy-background))
+        (avy-all-windows (if (eq targets-avy-all-windows 'use-avy)
+                             avy-all-windows
+                           targets-avy-all-windows))
+        (avy-all-windows-alt (if (eq targets-avy-all-windows-alt 'use-avy)
+                                 avy-all-windows-alt
+                               targets-avy-all-windows-alt))
+        ;; doesn't seem to be necessary
+        ;; (scroll-margin 0)
+        )
+    (avy-with command
+      (let ((avy-action #'targets--save-point-and-jump)
+            (tos (targets--collect-text-objects open type select-func)))
+        (if (not tos)
+            (message "No text objects found.")
+          (avy--process tos (avy--style-fn avy-style)))))))
 
 ;;; * Text Object Definers
 (defun targets--select-to (to-type select-type linewise open close beg end type
@@ -355,6 +465,7 @@ The keys are created by using PREFIX to prefix each key in KEYS."
                                      bind
                                      (next-key "n")
                                      (last-key "l")
+                                     (remote-key "r")
                                      keys
                                      more-keys)
   "The main text object definition facility provided by targets.
@@ -391,6 +502,13 @@ can be used to specify keys to be used in addtion to OPEN/CLOSE."
                             (concat "targets-inside-last-" mode name)))
          (last-around-name (intern
                             (concat "targets-around-last-" mode name)))
+         (remote-inner-name (intern
+                             (concat "targets-inner-remote-" mode name)))
+         (remote-a-name (intern (concat "targets-a-remote-" mode name)))
+         (remote-inside-name (intern
+                              (concat "targets-inside-remote-" mode name)))
+         (remote-around-name (intern
+                              (concat "targets-around-remote-" mode name)))
          (select-inner `(targets--select-to-with-seeking
                          ',to-type 'inner ,linewise ,open ,close beg end type
                          count))
@@ -473,6 +591,43 @@ can be used to specify keys to be used in addtion to OPEN/CLOSE."
              (list
               (list last-inside-name select-inside " inside the last ")
               (list last-around-name select-around " around the last ")))))
+
+       ,@(mapcar
+          (lambda (info)
+            `(evil-define-text-object ,(cl-first info)
+               (count &optional beg end type)
+               ,(concat "Select" (cl-third info) name " using avy.")
+               (setq targets--reset-position t)
+               (setq targets--reset-window (get-buffer-window))
+               ;; fix repeat info
+               (when (evil-repeat-recording-p)
+                 (setq
+                  evil-repeat-info
+                  `(((lambda ()
+                       (setq prefix-arg ,current-prefix-arg)
+                       (setq unread-command-events
+                             ',(listify-key-sequence (this-command-keys)))
+                       (call-interactively #',evil-this-operator)))))
+                 (evil-repeat-stop))
+               (if (numberp
+                    ;; will push point to register if succeeds
+                    (targets--avy-seek ',(cl-first info) ,open ,close
+                                       ',to-type
+                                       (lambda ()
+                                         ,(cl-second info))))
+                   ,(cl-second info)
+                 (point-to-register 'targets--reset-position)
+                 ;; or else the overlays will remain
+                 (keyboard-quit)
+                 nil)))
+          (append
+           (list (list remote-inner-name select-inner " some inner ")
+                 (list remote-a-name select-a " some outer "))
+           (unless (eq to-type 'object)
+             (list
+              (list remote-inside-name select-inside " inside some ")
+              (list remote-around-name select-around " around some ")))))
+
        ,(when bind
           `(progn
              ,@(mapcar (lambda (info)
@@ -491,7 +646,12 @@ can be used to specify keys to be used in addtion to OPEN/CLOSE."
                          `(evil-inner-text-objects-map #',last-inner-name
                                                        ,last-key)
                          `(evil-outer-text-objects-map #',last-a-name
-                                                       ,last-key))
+                                                       ,last-key)
+                         `(evil-inner-text-objects-map #',remote-inner-name
+                                                       ,remote-key)
+                         `(evil-outer-text-objects-map #',remote-a-name
+                                                       ,remote-key))
+
                         (unless (eq to-type 'object)
                           (list
                            `(targets-inside-text-objects-map #',inside-name nil)
@@ -503,7 +663,11 @@ can be used to specify keys to be used in addtion to OPEN/CLOSE."
                            `(targets-inside-text-objects-map #',last-inside-name
                                                              ,last-key)
                            `(targets-around-text-objects-map #',last-around-name
-                                                             ,last-key))))))))))
+                                                             ,last-key)
+                           `(targets-inside-text-objects-map
+                             #',remote-inside-name ,remote-key)
+                           `(targets-around-text-objects-map
+                             #',remote-around-name ,remote-key))))))))))
 
 ;;; * Setup
 (add-hook 'post-command-hook #'targets--reset-position)
@@ -513,7 +677,8 @@ can be used to specify keys to be used in addtion to OPEN/CLOSE."
                                       (inside-key "I")
                                       (around-key "A")
                                       (next-key "n")
-                                      (last-key "l"))
+                                      (last-key "l")
+                                      (remote-key "r"))
   `(progn
      (define-key evil-visual-state-map
        ,inside-key targets-inside-text-objects-map)
@@ -525,16 +690,16 @@ can be used to specify keys to be used in addtion to OPEN/CLOSE."
        ,around-key targets-around-text-objects-map)
      (define-key evil-inner-text-objects-map ,next-key nil)
      (define-key evil-inner-text-objects-map ,last-key nil)
+     (define-key evil-inner-text-objects-map ,remote-key nil)
      (define-key evil-outer-text-objects-map ,next-key nil)
      (define-key evil-outer-text-objects-map ,last-key nil)
-     ;; add post command hook
+     (define-key evil-outer-text-objects-map ,remote-key nil)
      ,@(mapcar (lambda (to-args)
                  `(targets-define-to ,@(append to-args
                                                (list :bind bind
                                                      :next-key next-key
                                                      :last-key last-key))))
                targets-text-objects)))
-
 
 (provide 'targets)
 ;;; targets.el ends here

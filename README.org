@@ -7,6 +7,7 @@ Please note that this package is in an early stage of development. This package 
 * Differences from =targets.vim=
 - Pairs can be regexps
 - No N or L (see rationale below)
+- Adds "remote" text objects (selected with [[https://github.com/abo-abo/avy][avy]])
 - Objects are supported (e.g. =danw=; this is a todo item for targets.vim)
 - Currently no support for tag text objects and no argument text object
 - Not polished (please make issues)
@@ -47,7 +48,7 @@ In addition to the standard inner and outer text objects, the =targets.vim= plug
 
 The =targets.vim= plugin also has =N= and =L= (which act as =n= and =l= with a doubled count). These do not exist for quotes since seeking behavior is intelligent in this package (a proper quote will always be selected). They do not exist for separators because it is easy to double your count if you wish to.
 
-Finally, there is a =[r]emote= text object (not yet implemented). This allows you to select the text object to act on using avy.
+Finally, there is a =[r]emote= text object. This allows you to select the text object to act on using avy. ~avy-resume~ is supported but will only move the point to the corresponding text object. ~evil-repeat~ can be used to repeat the action as well. For example, with [[https://github.com/Dewdrops/evil-exchange][evil-exchange]], =g x a s <avy-keys> . <avy-keys>= could be used to swap two sentences remotely.
 
 Note that the keys used for these can be customized.
 
@@ -57,9 +58,9 @@ Unlike in vim, evil already implements some of the features added in the aforeme
 ** Seeking
 By default, =i(=, for example, will not seek forward. ~evil-inner-paren~ can be redefined to seek forward by using strings instead of characters for the open and close paren, but the behavior will not always be as intelligent. This is because ~evil-up-block~ (~evil-up-paren~ is used for the default paren text objects) does not consider whether delimiters are escaped or whether they are in the same string or comment. Evil also does not have backward seeking.
 
-Instead of attempting to add more types of seeking to every evil selection function directly, this package just ignores the default seeking. If there is no text object at the point, this package will try the functions in =targets-seek-functions= in order in an attempt to find a text object. Like in =targets.vim=, seeking is customizable (by changing the functions in =targets-seek-functions=). By default, every text object defined with this package will seek first forward and then backward without a bound.
+Instead of attempting to add more types of seeking to every evil selection function directly, this package just ignores the default seeking. If there is no text object at the point, this package will try the functions in =targets-seek-functions= in order in an attempt to find a text object. Like in =targets.vim=, seeking is customizable (by changing the functions in =targets-seek-functions=). By default, every text object defined with this package will seek first forward and then backward.
 
-If you want to create a new seeking function, you can look at the functions in =targets-seek-functions= and at the arguments they take. It is more likely that you will only want to make slight changes to the seeking behavior. For example, if you don't want backward seeking, you can remove that function from the list. If you don't want any seeking, you can set the list to =nil=. If you want to bound seeking, you can set =targets-seek-bound= to a function that returns a buffer position (not yet implemented). If you do want to create your own seeking function, note that seeking functions should return a true value if the previous point should be added to the jump list.
+If you want to create a new seeking function, you can look at the functions in =targets-seek-functions= and at the arguments they take. It is more likely that you will only want to make slight changes to the seeking behavior. For example, if you don't want backward seeking, you can remove that function from the list. If you don't want any seeking, you can set the list to =nil=. By default, seeking is bounded to to the text visible in the window. To alter the bounds, the =targets-bound= function can be redefined or overridden.
 
 ** Jump List
 Like in =targets.vim=, you can also customize when seeking causes a new entry to be added to the jump list. To do this, you can redefine or override the ~targets-push-jump-p~ function. By default, a new entry is added when seeking moves the point to a different line.
@@ -83,9 +84,10 @@ The first argument is a symbol that will be used when naming the new text object
 (targets-define-to word 'evil-word nil object)
 #+end_src
 
-~targets-define-to~ accepts additional keyword arguments. Specifying =bind= as non-nil will also bind the created text objects. By default, text objects are bound to the opening delimiter (and closing delimiter for pairs, e.g =i(=, =i)=, =a(=, =a)=, etc.). If the delimiters are regexps or the type is =object=, =:keys= must be explicitly specified. =:keys= completely replaces the default keys, and =:more-keys= adds to them. Both can be either a single key or a list of keys. =:next-key= and =:last-key= can also be specified.
+~targets-define-to~ accepts additional keyword arguments. Specifying =bind= as non-nil will also bind the created text objects. By default, text objects are bound to the opening delimiter (and closing delimiter for pairs, e.g =i(=, =i)=, =a(=, =a)=, etc.). If the delimiters are regexps or the type is =object=, =:keys= must be explicitly specified. =:keys= completely replaces the default keys, and =:more-keys= adds to them. Both can be either a single key or a list of keys. =:next-key=, =:last-key=, and =:remote-key= can also be specified to change the intermediate keys used from their defaults.
 #+begin_src emacs-lisp
-(targets-define-to paren "(" ")" pair :bind t :more-keys "r" :last-key "p")
+(targets-define-to paren "(" ")" pair
+                   :bind t :more-keys "r" :last-key "p" :remote-key "R")
 (targets-define-to word 'evil-word nil object :bind t :keys "w")
 #+end_src
 ** ~targets-define-composite-to~
@@ -102,7 +104,7 @@ When run without any arguments, ~targets-setup~ will only create the text object
 (targets-setup t :last-key "L" :around-key (kbd "C-a"))
 #+end_src
 
-Note that =:next-key=, =:last-key=, and the binding behavior can all be overridden for an individual entry in =targets-text-objects=. =targets-text-objects= is composed of =targets-pair-text-objects=, =targets-quote-text-objects=, =targets-separator-text-objects=, and =targets-object-text-objects=. If you would like to modify the default text objects, you can set any of these before loading targets.
+Note that =:next-key=, =:last-key=, =:remote-key=, and the binding behavior can all be overridden for an individual entry in =targets-text-objects=. =targets-text-objects= is composed of =targets-pair-text-objects=, =targets-quote-text-objects=, =targets-separator-text-objects=, and =targets-object-text-objects=. If you would like to modify the default text objects, you can set any of these before loading targets.
 #+begin_src emacs-lisp
 (setq targets-quote-text-objects
   '((single-quote "'" nil quote :next-key "N")
@@ -127,6 +129,12 @@ After targets has loaded, you can still add items to and remove items from =targ
   :config
   (targets-setup t))
 #+end_src
+* Settings
+** Avy Settings
+For remote text objects, this package provides =targets-avy-style=, =targets-avy-keys=, =targets-avy-background=, =targets-avy-all-windows=, and =targets-avy-all-windows-alt=. All will override the corresponding avy settings when specified. When the first two are set to =nil= and the last three are set to the symbol =use-avy=, the corresponding avy setting will be used. Note that you can also use =avy-keys-alist= and =avy-styles-alist= for customizing the behavior of specific text objects.
+
+Although =targets-avy-all-windows= and =targets-avy-all-windows-alt= exist, changing them is not recommended. Using remote text objects with more than one window is not fully supported (and not all that useful). While it will work to create a visual selection, it will not work with other operators unless the other window is for the same buffer. I have not found a way around this at the moment.
+
 * Inspiration
 - [[https://github.com/wellle/targets.vim][wellle/targets.vim]] vim plugin
 - [[https://github.com/rhysd/vim-textobj-anyblock][rhysd/vim-textobj-anyblock]] vim plugin
