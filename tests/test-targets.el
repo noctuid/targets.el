@@ -2,6 +2,8 @@
 (require 'targets)
 
 (targets-setup t)
+(define-key evil-visual-state-map (kbd "RET") #'targets-last-text-object)
+(define-key evil-operator-state-map (kbd "RET") #'targets-last-text-object)
 
 (defmacro targets-with (in &rest body)
   "This is `lispy-with' modified for targets.
@@ -439,3 +441,26 @@ considered as part of the region."
       ;;         :to-equal " two |three")
       (expect (targets-with "one two |three" "v2ilw")
               :to-equal "~on|e two three"))))
+
+;;; * Specific Text Objects
+(describe "targets-last-text-object"
+  (before-all (setq targets-default-text-object #'targets-a-word)
+              (define-key evil-motion-state-map
+                (kbd "RET") #'targets-last-text-object))
+  (before-each (setq targets--last-operator-text-object nil
+                     targets--last-visual-text-object nil))
+  (it "should act as the default text object when there is no last text object"
+    (expect (targets-with "|foo bar baz" (kbd "d RET"))
+            :to-equal "|bar baz")
+    (expect (targets-with "|foo bar baz" (kbd "v RET"))
+            :to-equal "~foo| bar baz"))
+  (it "should act as the last text object"
+    (expect (targets-with "|foo bar baz" (kbd "d i w d RET"))
+            :to-equal "|bar baz")
+    (expect (targets-with "|foo bar baz" (kbd "v i w RET"))
+            :to-equal "~foo| bar baz"))
+  (it "should support a count"
+    (expect (targets-with "|foo bar baz" (kbd "d 2 RET"))
+            :to-equal "|baz")
+    (expect (targets-with "|foo bar baz" (kbd "v 2 RET"))
+            :to-equal "~foo bar| baz")))

@@ -100,6 +100,20 @@ prior to the seek should be added to the jump list."
   "A list of text objects to be definite with `targets-setup'.
 Each item should be a valid arglist for `targets-define-to'.")
 
+(defcustom targets-default-text-object nil
+  "The default text object to use for `targets-last-text-object'.
+This is used whenever there is no last text object stored for the current
+  state (operator or visual). Note that the last text object for visual state is
+  cleared after exiting visual state."
+  :group 'targets
+  :type 'function)
+
+(defvar targets--last-visual-text-object
+  "Holds the last text object used in visual state.")
+
+(defvar targets--last-operator-text-object
+  "Holds the last text object used in operator state.")
+
 (defcustom targets-avy-style nil
   "Method for displaying avy overlays.
 Use `avy-style' if nil."
@@ -345,6 +359,7 @@ it starts at or after the beginning of the window."
           (avy--process tos (avy--style-fn avy-style)))))))
 
 ;;; * Text Object Definers
+;; ** Helpers
 (defun targets--select-to (to-type select-type linewise open close beg end type
                                    count)
   "Return a range corresponding to the matched text object.
@@ -463,6 +478,7 @@ The keys are created by using PREFIX to prefix each key in KEYS."
                                  (pop keys))
         function))))
 
+;; ** targets-define-to
 ;;;###autoload
 (cl-defmacro targets-define-to (name open close to-type &key
                                      linewise
@@ -543,26 +559,31 @@ used to specify keys to be used in addtion to OPEN/CLOSE."
     `(progn
        (evil-define-text-object ,inner-name (count &optional beg end type)
          ,(concat "Select inner " name ".")
+         (targets--set-last-text-object #',inner-name)
          ,select-inner)
 
        (evil-define-text-object ,a-name (count &optional beg end type)
          ,(concat "Select a " name ".")
+         (targets--set-last-text-object #',a-name)
          ,select-a)
 
        ,(unless (eq to-type 'object)
           `(evil-define-text-object ,inside-name (count &optional beg end type)
              ,(concat "Select inside " name ".")
+             (targets--set-last-text-object #',inside-name)
              ,select-inside))
 
        ,(unless (eq to-type 'object)
           `(evil-define-text-object ,around-name (count &optional beg end type)
              ,(concat "Select around " name ".")
+             (targets--set-last-text-object #',around-name)
              ,select-around))
 
        ,@(mapcar (lambda (info)
                    `(evil-define-text-object ,(cl-first info)
                       (count &optional beg end type)
                       ,(concat "Select" (cl-third info) name ".")
+                      (targets--set-last-text-object #',(cl-first info))
                       (point-to-register 'targets--reset-position)
                       (setq targets--reset-position t)
                       (when (targets-seek-forward ,open nil ',to-type count)
@@ -585,6 +606,7 @@ used to specify keys to be used in addtion to OPEN/CLOSE."
             `(evil-define-text-object ,(cl-first info)
                (count &optional beg end type)
                ,(concat "Select" (cl-third info) name ".")
+               (targets--set-last-text-object #',(cl-first info))
                (point-to-register 'targets--reset-position)
                (setq targets--reset-position t)
                (when (targets-seek-backward ,open ,close ',to-type count)
@@ -603,6 +625,7 @@ used to specify keys to be used in addtion to OPEN/CLOSE."
             `(evil-define-text-object ,(cl-first info)
                (count &optional beg end type)
                ,(concat "Select" (cl-third info) name " using avy.")
+               (targets--set-last-text-object #',(cl-first info))
                (setq targets--reset-position t)
                (setq targets--reset-window (get-buffer-window))
                ;; fix repeat info
@@ -674,6 +697,28 @@ used to specify keys to be used in addtion to OPEN/CLOSE."
                              #',remote-inside-name ,remote-key)
                            `(targets-around-text-objects-map
                              #',remote-around-name ,remote-key))))))))))
+
+;;; * Specific Text Objects
+(defun targets--set-last-text-object (to)
+  "Helper to set the last text object to TO."
+  (if (evil-visual-state-p)
+      (setq targets--last-visual-text-object to)
+    (setq targets--last-operator-text-object to)))
+
+(defun targets--clear-last-visual-text-object ()
+  "Helper to clear `targets--last-visual-text-object'."
+  (setq targets--last-visual-text-object nil))
+
+(add-hook 'evil-visual-state-exit-hook #'targets--clear-last-visual-text-object)
+
+;;;###autoload
+(defun targets-last-text-object ()
+  "Run the last text object or fall back to `targets-default-text-object'."
+  (interactive)
+  (call-interactively (or (if (evil-visual-state-p)
+                              targets--last-visual-text-object
+                            targets--last-operator-text-object)
+                          targets-default-text-object)))
 
 ;;; * Setup
 (add-hook 'post-command-hook #'targets--reset-position)

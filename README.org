@@ -96,6 +96,15 @@ Not yet implemented.
 ** ~targets-define-simple-to~
 Not yet implemented.
 
+* Specific Provided Text Objects
+** ~targets-last-text-object~
+This command will run the the last text object used in the current state (operator or visual). For operator state, it may be useful if you want to use a different operator with the previous text object (otherwise you could just use ~evil-repeat~). It is probably more useful for visual state where it can be used as a shorter key to expand the region. The last text object for visual state resets in between visual selections. You can set =targets-default-text-object= to a default text object to use the first time ~targets-last-text-object~ is run after visual state is entered.
+
+~targets-last-text-object~ is unbound by default; I personally bind it to =RET=:
+#+begin_src emacs-lisp
+(define-key evil-visual-state-map (kbd "RET") #'targets-last-text-object)
+(define-key evil-operator-state-map (kbd "RET") #'targets-last-text-object)
+#+end_src
 * Configuration
 ~targets-setup~ can be used to create and optionally bind all the text objects specified in =targets-text-objects=. =targets-text-objects= is a list of lists of arguments to be passed to ~targets-define-to~.
 
@@ -143,5 +152,5 @@ Although =targets-avy-all-windows= and =targets-avy-all-windows-alt= exist, chan
 - [[https://github.com/wellle/targets.vim][wellle/targets.vim]] vim plugin
 - [[https://github.com/rhysd/vim-textobj-anyblock][rhysd/vim-textobj-anyblock]] vim plugin
 - [[https://github.com/paradigm/TextObjectify][paradigm/TextObjectify]] vim plugin
-- [[https://github.com/terryma/vim-expand-region][terryma/vim-expand-region]] vim plugin
+- [[https://github.com/magnars/expand-region.el][expand-region.el]] emacs package and [[https://github.com/terryma/vim-expand-region][terryma/vim-expand-region]] vim plugin
 - [[https://redd.it/5fotth][this]] reddit thread
