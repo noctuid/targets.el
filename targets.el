@@ -91,6 +91,10 @@ prior to the seek should be added to the jump list."
     (sentence 'evil-sentence nil object :keys "s")
     (paragraph 'evil-paragraph nil object :keys "p" :linewise t)))
 
+(defvar targets-user-text-objects nil
+  "Defines user text objects.
+These take precedence over text objects in `targets-text-objects'.")
+
 (defvar targets-text-objects
   (append targets-pair-text-objects
           targets-quote-text-objects
@@ -799,7 +803,11 @@ run."
                                                      :next-key next-key
                                                      :last-key last-key
                                                      :remote-key remote-key))))
-               targets-text-objects)))
+               (append targets-user-text-objects
+                       (cl-set-difference
+                        targets-text-objects
+                        targets-user-text-objects
+                        :key #'car)))))
 
 (provide 'targets)
 ;;; targets.el ends here
