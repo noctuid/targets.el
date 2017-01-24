@@ -4,7 +4,7 @@
 ;; URL: https://github.com/noctuid/targets.el
 ;; Created: November 29, 2016
 ;; Keywords: evil text-object convenience
-;; Package-Requires: ((cl-lib "0.5") (evil "1.1.0") (avy "0.4.0"))
+;; Package-Requires: ((emacs "24.4")  (cl-lib "0.5") (evil "1.1.0") (avy "0.4.0"))
 ;; Version: 0.1
 
 ;; This file is not part of GNU Emacs.
@@ -31,7 +31,6 @@
 ;; TODO gensyms/once-only and debug declarations
 ;;; Code:
 (require 'cl-lib)
-(require 'avy)
 (require 'evil)
 
 ;;; * Settings
@@ -298,66 +297,68 @@ The point is not restored if there is a selection."
       (setq targets--reset-window nil))))
 
 ;;; * Avy-related Functions
-(defun targets--collect-text-objects (open type select-func)
-  "Collect all locations of visible text objects based on OPEN and TYPE.
+(with-eval-after-load 'avy
+  (defun targets--collect-text-objects (open type select-func)
+    "Collect all locations of visible text objects based on OPEN and TYPE.
 SELECT-FUNC is used to determine if there is a text object at the beginning of
 the visible regions of the window as `targets-seek-foraward' will seek past the
 current text object."
-  (let (all-to-positions)
-    (avy-dowindows current-prefix-arg
-      (save-excursion
-        (dolist (bounds (avy--find-visible-regions (window-start) (window-end)))
-          (goto-char (car bounds))
-          (let ((current-window (get-buffer-window))
-                to-pos
-                to-positions)
-            ;; add a text object at the beginning of the window
-            ;; as the eol of an invisible line can be visible in org buffers,
-            ;; don't do this if the point is at the eol
-            (when (and (not (looking-at (rx eol)))
-                       (let ((range (funcall select-func)))
-                         (and range (>= (car range) (car bounds)))))
-              (push (cons (point) current-window) to-positions))
-            (while (setq to-pos (targets-seek-forward open nil type
-                                                      1 (cdr bounds)))
-              (push (cons to-pos current-window) to-positions)
-              (goto-char to-pos))
-            (setq all-to-positions (append all-to-positions
-                                           (nreverse to-positions)))))))
-    all-to-positions))
+    (let (all-to-positions)
+      (avy-dowindows current-prefix-arg
+        (save-excursion
+          (dolist (bounds (avy--find-visible-regions (window-start)
+                                                     (window-end)))
+            (goto-char (car bounds))
+            (let ((current-window (get-buffer-window))
+                  to-pos
+                  to-positions)
+              ;; add a text object at the beginning of the window
+              ;; as the eol of an invisible line can be visible in org buffers,
+              ;; don't do this if the point is at the eol
+              (when (and (not (looking-at (rx eol)))
+                         (let ((range (funcall select-func)))
+                           (and range (>= (car range) (car bounds)))))
+                (push (cons (point) current-window) to-positions))
+              (while (setq to-pos (targets-seek-forward open nil type
+                                                        1 (cdr bounds)))
+                (push (cons to-pos current-window) to-positions)
+                (goto-char to-pos))
+              (setq all-to-positions (append all-to-positions
+                                             (nreverse to-positions)))))))
+      all-to-positions))
 
-(defun targets--save-point-and-jump (pos)
-  "Put the point in the targets--reset-position register nad jump to POS."
-  (point-to-register 'targets--reset-position)
-  (goto-char pos))
+  (defun targets--save-point-and-jump (pos)
+    "Put the point in the targets--reset-position register nad jump to POS."
+    (point-to-register 'targets--reset-position)
+    (goto-char pos))
 
-(defun targets--avy-seek (command open _ type select-func)
-  "Seek to a text object specified by OPEN and TYPE using avy for selection.
+  (defun targets--avy-seek (command open _ type select-func)
+    "Seek to a text object specified by OPEN and TYPE using avy for selection.
 COMMAND will be used as the name given to `avy-with', so that `avy-styles-alist'
 and `avy-keys-alist' can be customize for COMMAND. SELECT-FUNC is used to
 determine if there is a text object at the beginning of the visible regions of
 the window. A text object at the beginning of the window will only included if
 it starts at or after the beginning of the window."
-  (let ((avy-style (or targets-avy-style avy-style))
-        (avy-keys (or targets-avy-keys avy-keys))
-        (avy-background (if (eq targets-avy-background 'use-avy)
-                            avy-background
-                          targets-avy-background))
-        (avy-all-windows (if (eq targets-avy-all-windows 'use-avy)
-                             avy-all-windows
-                           targets-avy-all-windows))
-        (avy-all-windows-alt (if (eq targets-avy-all-windows-alt 'use-avy)
-                                 avy-all-windows-alt
-                               targets-avy-all-windows-alt))
-        ;; doesn't seem to be necessary
-        ;; (scroll-margin 0)
-        )
-    (avy-with command
-      (let ((avy-action #'targets--save-point-and-jump)
-            (tos (targets--collect-text-objects open type select-func)))
-        (if (not tos)
-            (message "No text objects found.")
-          (avy--process tos (avy--style-fn avy-style)))))))
+    (let ((avy-style (or targets-avy-style avy-style))
+          (avy-keys (or targets-avy-keys avy-keys))
+          (avy-background (if (eq targets-avy-background 'use-avy)
+                              avy-background
+                            targets-avy-background))
+          (avy-all-windows (if (eq targets-avy-all-windows 'use-avy)
+                               avy-all-windows
+                             targets-avy-all-windows))
+          (avy-all-windows-alt (if (eq targets-avy-all-windows-alt 'use-avy)
+                                   avy-all-windows-alt
+                                 targets-avy-all-windows-alt))
+          ;; doesn't seem to be necessary
+          ;; (scroll-margin 0)
+          )
+      (avy-with command
+        (let ((avy-action #'targets--save-point-and-jump)
+              (tos (targets--collect-text-objects open type select-func)))
+          (if (not tos)
+              (message "No text objects found.")
+            (avy--process tos (avy--style-fn avy-style))))))))
 
 ;;; * Text Object Definers
 ;; ** Helpers
@@ -627,6 +628,7 @@ used to specify keys to be used in addtion to OPEN/CLOSE."
             `(evil-define-text-object ,(cl-first info)
                (count &optional beg end type)
                ,(concat "Select" (cl-third info) name " using avy.")
+               (require 'avy)
                (targets--set-last-text-object #',(cl-first info))
                (setq targets--reset-position t)
                (setq targets--reset-window (get-buffer-window))
