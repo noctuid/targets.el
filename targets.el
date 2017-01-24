@@ -3,7 +3,7 @@
 ;; Author: Fox Kiester <noct@openmailbox.org>
 ;; URL: https://github.com/noctuid/targets.el
 ;; Created: November 29, 2016
-;; Keywords: evil text-object
+;; Keywords: evil text-object convenience
 ;; Package-Requires: ((cl-lib "0.5") (evil "1.1.0") (avy "0.4.0"))
 ;; Version: 0.1
 
@@ -125,7 +125,7 @@ Use `avy-style' if nil."
           (const :tag "Post" post)
           (const :tag "De Bruijn" de-bruijn)))
 
-(defcustom targets-avy-keys nil 
+(defcustom targets-avy-keys nil
   "Keys used for selecting urls.
 Use `avy-keys' if nil."
   :group 'targets
@@ -215,7 +215,8 @@ move the point to beginning of the match and return its position."
 
 (defun targets-seek-backward (open close type &optional count bound)
   "Seek backward to the text object specified by OPEN, CLOSE, and TYPE COUNT
-times. If successful, return the matched position (otherwise nil)."
+times. If BOUND is non-nil, do not seek beyond BOUND. If successful, return the
+matched position (otherwise nil)."
   (setq count (or count 1))
   (setq bound (or bound (targets-bound t) (point-min)))
   (let ((orig-pos (point))
@@ -450,6 +451,7 @@ to find a matching text object. Push the initial position when seeking if
 `targets--select-to' for more details."
   (let ((seek-functions targets-seek-functions)
         (orig-pos (point))
+        range
         push-jump-p)
     (while (and (not
                  (setq range
@@ -739,7 +741,7 @@ See `targets-setup' for more details."
                                  (if (eq (evil-visual-type) 'block)
                                      #'evil-insert
                                    targets-inside-text-objects-map))))
-      (define-key evil-visual-state
+      (define-key evil-visual-state-map
         inside-key targets-inside-text-objects-map)))
 
   (when around-key
@@ -754,7 +756,7 @@ See `targets-setup' for more details."
                                  (if (eq (evil-visual-type) 'block)
                                      #'evil-append
                                    targets-around-text-objects-map))))
-      (define-key evil-visual-state
+      (define-key evil-visual-state-map
         around-key targets-around-text-objects-map)))
 
   ;; unbind intermediate keys
