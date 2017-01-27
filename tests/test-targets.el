@@ -2,9 +2,11 @@
 (require 'targets)
 
 (targets-setup t)
-(define-key evil-visual-state-map (kbd "RET") #'targets-last-text-object)
-(define-key evil-operator-state-map (kbd "RET") #'targets-last-text-object)
+(setq evil-move-cursor-back nil
+      avy-keys (string-to-list "abcdefg"))
 
+;;; * Helpers
+;; TODO before killing the buffer wait for post command hook if possible
 (defmacro targets-with (in &rest body)
   "This is `lispy-with' modified for targets.
 Note that | is considered to be \"on\" a character, meaning that it is included
@@ -49,10 +51,9 @@ considered as part of the region."
          (and (buffer-name temp-buffer)
               (kill-buffer temp-buffer))))))
 
-;;; Pair Tests
+;;; * Pair Tests
 ;; TODO tests for regexp pair
 (describe "The targets pair text object"
-  :before-all (setq evil-move-cursor-back nil)
   (describe "targets-inner-paren"
     (it "should delete the contents of parens"
       (expect (targets-with "(a |b c)" "di(")
@@ -100,6 +101,11 @@ considered as part of the region."
     (it "should seek backward in visual state as well"
       (expect (targets-with "(a b c) |d" "va(")
               :to-equal "~(a b c|) d"))
+    (it "should handle immediately nested parens when seeking"
+      (expect (targets-with "|a ((b c d))" "da(")
+              :to-equal "a |")
+      (expect (targets-with "|a ((b c d))" "va(")
+              :to-equal "a ~((b c d)|)"))
     (it "should grow an existing selection"
       (expect (targets-with "(~(a b c)|)" "a(")
               :to-equal "~((a b c)|)"))
@@ -172,19 +178,24 @@ considered as part of the region."
       (expect (targets-with "((a |b c) ) d" "v2A(")
               :to-equal "~((a b c) )| d")))
   (describe "targets-inner-next-paren"
-    (it "should delete the contents of the next parens"
+    (xit "should delete the contents of the next parens"
       (expect (targets-with "|a (b c d)" "din(")
               :to-equal "|a ()"))
     (it "should select the contents of the next parens"
       (expect (targets-with "|a (b c d)" "vin(")
               :to-equal "a (~b c |d)"))
-    (it "should support a count"
+    (it "should handle immediately nested"
+      (expect (targets-with "|a ((b c d))" "din(")
+              :to-equal "a (|)")
+      (expect (targets-with "|a ((b c d))" "vin(")
+              :to-equal "a (~(b c d|))"))
+    (xit "should support a count"
       (expect (targets-with "|a (b c d) (e f g)" "d2in(")
               :to-equal "|a (b c d) ()"))
     (it "should support a count in visual state as well"
       (expect (targets-with "|a (b c d) (e f g)" "v2in(")
               :to-equal "a (b c d) (~e f |g)"))
-    (it "should support a count in nested parens"
+    (xit "should support a count in nested parens"
       (expect (targets-with "|a (b (c d) e)" "d2in(")
               :to-equal "|a (b () e)"))
     (it "should support a count in nested parens in visual state as well"
@@ -221,9 +232,8 @@ considered as part of the region."
       (expect (targets-with "(a (b c) d) |e" "v2il(")
               :to-equal "(a (~b |c) d) e"))))
 
-;;; Quote Tests
+;;; * Quote Tests
 (describe "The targets quote text object"
-  :before-all (setq evil-move-cursor-back nil)
   (describe "targets-inner-double-quote"
     (it "should delete the contents of quotes"
       (expect (targets-with "\"a |b c\"" "di\"")
@@ -301,9 +311,8 @@ considered as part of the region."
       (expect (targets-with "\"a b c\" \"d e f\" |g" "v2il\"")
               :to-equal "\"~a b |c\" \"d e f\" g"))))
 
-;;; Separator Tests
+;;; * Separator Tests
 (describe "The targets separator text object"
-  :before-all (setq evil-move-cursor-back nil)
   (describe "targets-inner-comma"
     (it "should delete the contents of commas"
       (expect (targets-with ", a |b c," "di,")
@@ -380,9 +389,8 @@ considered as part of the region."
       (expect (targets-with ", a b c, d e f, |g" "v2il,")
               :to-equal ",~ a b |c, d e f, g"))))
 
-;;; Object/Thing Tests
+;;; * Object/Thing Tests
 (describe "The targets object/thing text object"
-  :before-all (setq evil-move-cursor-back nil)
   (describe "targets-inner-word"
     (it "should delete a word excluding whitespace"
       (expect (targets-with "one |two three" "diw")
@@ -440,7 +448,24 @@ considered as part of the region."
       ;; (expect (targets-with "one two |three" "d2ilw")
       ;;         :to-equal " two |three")
       (expect (targets-with "one two |three" "v2ilw")
-              :to-equal "~on|e two three"))))
+              :to-equal "~on|e two three")))
+  (describe "targets-inner-paragraph"
+    (it "should act linewise on a paragraph excluding blank lines"
+      (expect (targets-with "|A\nParagraph\n\n" "dip")
+              :to-equal "|\n")
+      (expect (targets-with "|A\nParagraph\n\n" "vip")
+              :to-equal "~A\nParagraph|\n\n")))
+  (describe "targets-a-paragraph"
+    (it "should act linewise on a paragraph including blank lines after"
+      (expect (targets-with "\n|A\nParagraph\n\n" "dap")
+              :to-equal "\n|")
+      (expect (targets-with "\n|A\nParagraph\n\n" "vap")
+              :to-equal "\n~A\nParagraph\n|\n"))
+    (it "should act linewise on a paragraph including blank lines before"
+      (expect (targets-with "\n\n|A\nParagraph" "dap")
+              :to-equal "|")
+      (expect (targets-with "\n\n|A\nParagraph" "vap")
+              :to-equal "~\n\nA\nParagrap|h"))))
 
 ;;; * Specific Text Objects
 (describe "targets-last-text-object"
