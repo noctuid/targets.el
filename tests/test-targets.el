@@ -467,6 +467,67 @@ considered as part of the region."
       (expect (targets-with "\n\n|A\nParagraph" "vap")
               :to-equal "~\n\nA\nParagrap|h"))))
 
+;;; * Composite Text Objects
+(describe "The targets composite text object"
+  (before-all (targets-define-composite-to pair-delim
+                (("(" ")" pair)
+                 ("[" "]" pair)
+                 ("{" "}" pair)
+                 ("<" ">" pair))
+                :bind t
+                :keys "d"))
+  (describe "targets-inner-pair-delim"
+    (it "should act on the contents of pair delimiters"
+      (expect (targets-with "{([|a])}" "did")
+              :to-equal "{([|])}")
+      (expect (targets-with "{([|a])}" "vid")
+              :to-equal "{([~|a])}")
+      (expect (targets-with "{|([a])}" "did")
+              :to-equal "{(|)}")
+      (expect (targets-with "{|([a])}" "vid")
+              :to-equal "{(~[a|])}")
+      ;; don't require the new selection to encompass the current one when it is
+      ;; 1 char
+      (expect (targets-with "{~|([a])}" "id")
+              :to-equal "{(~[a|])}"))
+    (it "should, by default, seek forward"
+      (expect (targets-with "|a {[b]}" "did")
+              :to-equal "a {|}")
+      (expect (targets-with "|a {[b]}" "vid")
+              :to-equal "a {~[b|]}"))
+    (it "should, by default, seek forward then backward"
+      (expect (targets-with "[<a>] |b" "did")
+              :to-equal "[|] b")
+      (expect (targets-with "[<a>] |b" "vid")
+              :to-equal "[~<a|>] b"))
+    (it "should grow an existing selection when possible then seek"
+      ;; shouldn't matter that the seeking selection is smaller
+      (expect (targets-with "[(~|a) b] (d)" "id")
+              :to-equal "[~(a) |b] (d)")
+      (expect (targets-with "[~(a) |b] (d)" "id")
+              :to-equal "[(a) b] (~|d)"))
+    (it "should support a count even for different delimiters"
+      (expect (targets-with "[(|a) b]" "d2id")
+              :to-equal "[|]")
+      (expect (targets-with "[(|a) b]" "v2id")
+              :to-equal "[~(a) |b]")
+      ;; act on largest available if count is larger
+      (expect (targets-with "[(|a) b]" "d3id")
+              :to-equal "[|]")
+      (expect (targets-with "[(|a) b]" "v3id")
+              :to-equal "[~(a) |b]")))
+  (describe "targets-inner-next-pair"
+    (it "should act on the contents of the next pair delimiters"
+      (expect (targets-with "|a [(b) (c {d})]" "dind")
+              :to-equal "a [|]")
+      (expect (targets-with "|a [(b) (c {d})]" "vind")
+              :to-equal "a [~(b) (c {d}|)]"))
+    (it "should support a count"
+      (expect (targets-with "|a [b (c [d])]" "d2ind")
+              :to-equal "a [b (|)]")
+      (expect (targets-with "|a [b (c [d])]" "v2ind")
+              :to-equal "a [b (~c |[d])]"))))
+
 ;;; * Specific Text Objects
 (describe "targets-last-text-object"
   (before-all (setq targets-default-text-object #'targets-a-word)

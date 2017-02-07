@@ -19,7 +19,7 @@ Targets.vim specifies three kinds of text objects. This package adds another thr
 - quote (created using ~evil-select-quote~)
 - separator (created using ~evil-select-paren~)
 + object (created with ~evil-select-*-object~; uses thing-at-point)
-+ composite (a combination of any number of the above; not yet implemented)
++ composite (a combination of any number of the above)
 + simple (e.g. created using ~evil-range~; extra =n=, =l=, etc. text objects not supported; not yet implemented)
 
 ** Pair
@@ -91,7 +91,20 @@ The first argument is a symbol that will be used when naming the new text object
 (targets-define-to word 'evil-word nil object :bind t :keys "w")
 #+end_src
 ** ~targets-define-composite-to~
-Not yet implemented.
+Composite objects are composed of multiple regular text objects. Whichever text object gives the smallest selection that includes the current selection or point will be used. If there are no text objects around the current selection or at the point, composite text objects will still seek (if ~targets-seek-functions~ is non-nil). When seeking, the closest text object is favored. Counts still work to expand the selection multiple times (e.g. =d2id=).
+
+Here is an example of defining composite text objects that will act on any of the default pair delimiters:
+#+begin_src emacs-lisp
+(targets-define-composite-to pair-delimiter
+  (("(" ")" pair)
+   ("[" "]" pair)
+   ("{" "}" pair)
+   ("<" ">" pair))
+  :bind t
+  :next-key nil
+  :last-key nil
+  :keys "d")
+#+end_src
 
 ** ~targets-define-simple-to~
 Not yet implemented.

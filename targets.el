@@ -307,7 +307,13 @@ The point is not restored if there is a selection."
 SELECT-FUNC is used to determine if there is a text object at the beginning of
 the visible regions of the window as `targets-seek-foraward' will seek past the
 current text object."
-    (let (all-to-positions)
+    (let ((open (if (listp open)
+                    open
+                  (list open)))
+          (type (if (listp type)
+                    type
+                  (list type)))
+          all-to-positions)
       (avy-dowindows current-prefix-arg
         (save-excursion
           (dolist (bounds (avy--find-visible-regions (window-start)
@@ -322,13 +328,18 @@ current text object."
               (when (and (not (looking-at (rx eol)))
                          (let ((range (funcall select-func)))
                            (and range (>= (car range) (car bounds)))))
-                (push (cons (point) current-window) to-positions))
-              (while (setq to-pos (targets-seek-forward open nil type
-                                                        1 (cdr bounds)))
-                (push (cons to-pos current-window) to-positions)
-                (goto-char to-pos))
-              (setq all-to-positions (append all-to-positions
-                                             (nreverse to-positions)))))))
+                (push (point) to-positions))
+              (dotimes (i (length open))
+                (while (setq to-pos (targets-seek-forward
+                                     (nth i open) nil (nth i type)
+                                     1 (cdr bounds)))
+                  (push to-pos to-positions)
+                  (goto-char to-pos))
+                (goto-char (car bounds)))
+              (setq all-to-positions
+                    (append all-to-positions
+                            (mapcar (lambda (x) (cons x current-window))
+                                    (sort (delete-dups to-positions) #'<))))))))
       all-to-positions))
 
   (defun targets--save-point-and-jump (pos)
@@ -373,48 +384,48 @@ The text object is specified by TO-TYPE (pair, quote, separator, or object),
 SELECT-TYPE (inner, a, inside, or around), LINEWISE, OPEN, and CLOSE. BEG, END,
 and TYPE specify visual selection information. COUNT is the number of text
 objects."
-  (let* ((open-char (cl-case to-type
-                      (pair (when (and (= (length open) 1)
-                                       (= (length close) 1))
-                              (string-to-char open)))
-                      (quote (string-to-char open))))
-         (close-char (when (and open-char (eq to-type 'pair))
-                       (string-to-char close)))
-         (inclusive (when (memq select-type '(a around))
-                      t))
-         (range
-          (save-excursion
-            (cl-case to-type
-              (pair
-               (evil-select-paren (or open-char open) (or close-char close)
-                                  beg end type count inclusive))
-              (separator
-               (if inclusive
-                   (let ((range
-                          (evil-select-paren open open beg end type count t)))
-                     ;; reduce range
-                     (when range
-                       (setf (cadr range) (1- (cadr range))))
-                     range)
-                 (evil-select-paren open open beg end type count)))
-              (quote
-               (if inclusive
-                   ;; because don't want whitespace
-                   (let ((range
-                          (evil-select-quote open-char beg end type count)))
-                     (when range
-                       ;; expand range
-                       (setf (car range) (1- (car range))
-                             (cadr range) (1+ (cadr range))))
-                     range)
-                 (evil-select-quote open-char beg end type count)))
-              (object
-               (if inclusive
-                   (evil-select-an-object open beg end type count linewise)
-                 (evil-select-inner-object open beg end type count
-                                           linewise)))))))
-    (when range
-      (save-excursion
+  (save-excursion
+    (let* ((open-char (cl-case to-type
+                        (pair (when (and (= (length open) 1)
+                                         (= (length close) 1))
+                                (string-to-char open)))
+                        (quote (string-to-char open))))
+           (close-char (when (and open-char (eq to-type 'pair))
+                         (string-to-char close)))
+           (inclusive (when (memq select-type '(a around))
+                        t))
+           (range
+            (save-excursion
+              (cl-case to-type
+                (pair
+                 (evil-select-paren (or open-char open) (or close-char close)
+                                    beg end type count inclusive))
+                (separator
+                 (if inclusive
+                     (let ((range
+                            (evil-select-paren open open beg end type count t)))
+                       ;; reduce range
+                       (when range
+                         (setf (cadr range) (1- (cadr range))))
+                       range)
+                   (evil-select-paren open open beg end type count)))
+                (quote
+                 (if inclusive
+                     ;; because don't want whitespace
+                     (let ((range
+                            (evil-select-quote open-char beg end type count)))
+                       (when range
+                         ;; expand range
+                         (setf (car range) (1- (car range))
+                               (cadr range) (1+ (cadr range))))
+                       range)
+                   (evil-select-quote open-char beg end type count)))
+                (object
+                 (if inclusive
+                     (evil-select-an-object open beg end type count linewise)
+                   (evil-select-inner-object open beg end type count
+                                             linewise)))))))
+      (when range
         (when (and (not inclusive)
                    (not (eq to-type 'object))
                    (looking-at (regexp-quote open)))
@@ -454,25 +465,26 @@ If unsuccessful, seek using the functions in `targets-seek-functions' to attempt
 to find a matching text object. Push the initial position when seeking if
 `targets-push-jump' run with the inital and final positions returns non-nil. See
 `targets--select-to' for more details."
-  (let ((seek-functions targets-seek-functions)
-        (orig-pos (point))
-        range
-        push-jump-p)
-    (while (and (not
-                 (setq range
-                       (ignore-errors
-                         (save-excursion
-                           (targets--select-to to-type select-type linewise open
-                                               close beg end type count)))))
-                seek-functions)
-      (goto-char orig-pos)
-      (funcall (pop seek-functions) open close to-type)
-      (setq push-jump-p (targets-push-jump-p orig-pos (point)))
-      ;; discard visual info if seeking
-      (setq beg nil end nil))
-    (when (and range push-jump-p)
-      (evil-set-jump orig-pos))
-    range))
+  (save-excursion
+    (let ((seek-functions targets-seek-functions)
+          (orig-pos (point))
+          range
+          push-jump-p)
+      (while (and (not
+                   (setq range
+                         (ignore-errors
+                           (save-excursion
+                             (targets--select-to to-type select-type linewise open
+                                                 close beg end type count)))))
+                  seek-functions)
+        (goto-char orig-pos)
+        (funcall (pop seek-functions) open close to-type)
+        (setq push-jump-p (targets-push-jump-p orig-pos (point)))
+        ;; discard visual info if seeking
+        (setq beg nil end nil))
+      (when (and range push-jump-p)
+        (evil-set-jump orig-pos))
+      range)))
 
 (defun targets--define-keys (keymap function prefix keys)
   "In KEYMAP, bind multiple keys to FUNCTION.
@@ -705,6 +717,284 @@ used to specify keys to be used in addtion to OPEN/CLOSE."
                              #',remote-inside-name ,remote-key)
                            `(targets-around-text-objects-map
                              #',remote-around-name ,remote-key))))))))))
+
+;; ** targets-define-composite-to
+(defun targets--composite-seek (text-objects &optional backwards count)
+  "Seek forward to any text object in TEXT-OBJECTS.
+If BACKWARDS is non-nil seek backwards. If COUNT is non-nil, seek that many
+times. If successful, return the matched position (otherwise nil)."
+  (let ((orig-pos (point)))
+    (cl-dotimes (_ (or count 1))
+      (let (positions)
+        (dolist (seek-args text-objects)
+          (save-excursion
+            (setq seek-args (cl-subseq seek-args 0 3))
+            (push (if backwards
+                      (apply #'targets-seek-backward seek-args)
+                    (apply #'targets-seek-forward seek-args))
+                  positions)))
+        (setq positions (delq nil positions))
+        (if positions
+            (goto-char (if backwards
+                           (apply #'max positions)
+                         (apply #'min positions)))
+          (cl-return-from nil))))
+    (unless (= (point) orig-pos)
+      (point))))
+
+(defun targets--select-composite-to-with-seeking (beg end text-objects)
+  "Like `targets--select-to-with-seeking' but for composite text objects.
+BEG and END correspond to a previous range or current visual selection.
+TEXT-OBJECTS is a list of lists of arguments for
+`targets--select-to-with-seeking'."
+  (let* (ranges
+         after-ranges
+         before-ranges
+         ;; ignore 1-char visual selection (visual selection just started)
+         ;; necessary when moving point forward to account for inner/inside
+         ;; text object ranges
+         (visualp (and beg end (not (= (- end beg) 1)))))
+    (dolist (to-args text-objects)
+      (let ((range (apply #'targets--select-to-with-seeking to-args))
+            (open (cl-fourth to-args))
+            (to-type (car to-args)))
+        (save-excursion
+          (when range
+            (when (and (not (eq to-type 'object))
+                       (looking-at (regexp-quote open)))
+              ;; so point will still be inside range for inner/inside text
+              ;; objects
+              (goto-char (match-end 0))
+              (skip-chars-forward " \t"))
+            (cond
+             ;; new range must not be contained within the current one
+             ((and visualp (>= (car range) beg) (<= (cadr range) end)))
+             ((> (car range) (if visualp beg (point)))
+              (push range after-ranges))
+             ((< (cadr range) (if visualp end (point)))
+              (push range before-ranges))
+             (t
+              (push range ranges)))))))
+    (cond (ranges
+           ;; favor the smallest around the point/region
+           (car (sort ranges (lambda (x y) (< (- (cadr x) (car x))
+                                              (- (cadr y) (car y)))))))
+          ((setq ranges (or ranges after-ranges before-ranges))
+           ;; favor the closest when seeking
+           (car (cl-sort ranges (if after-ranges
+                                    #'<
+                                  #'>)
+                         :key (if after-ranges
+                                  #'car
+                                #'cadr)))))))
+
+(defun targets--select-composite
+    (select-type beg end type count user-to-args)
+  "Select a composite text object.
+This function does the necessary processing before running
+`targets--select-composite-to-with-seeking' and allows for counts (for expanding
+a region)."
+  (let (range
+        new-range
+        ;; disable seeking with count
+        (targets-seek-functions (if (= count 1)
+                                    targets-seek-functions
+                                  nil)))
+    (cl-dotimes (_ count)
+      (setq new-range
+            (funcall #'targets--select-composite-to-with-seeking
+                     beg end
+                     (mapcar (lambda (to-arg)
+                               (list (cl-third to-arg)
+                                     select-type
+                                     (cl-fourth to-arg)
+                                     (cl-first to-arg)
+                                     (cl-second to-arg)
+                                     beg
+                                     end
+                                     type
+                                     1))
+                             user-to-args)))
+      (if new-range
+          (setq beg (car new-range)
+                end (cadr new-range)
+                range new-range)
+        (cl-return-from nil)))
+    range))
+
+(cl-defmacro targets-define-composite-to (name to-args &key
+                                               bind
+                                               (next-key "n")
+                                               (last-key "l")
+                                               (remote-key "r")
+                                               keys)
+  "Define a composite text object.
+NAME is used to name the resulting text objects (e.g. targets-inner-NAME).
+TO-ARGS is a list of list of arguments like you would pass to
+`targets-define-to': ((open close type &key linewise)...).
+
+BIND, NEXT-KEY, LAST-KEY, REMOTE-KEY, and KEYS all behave the same as in
+`targets-define-to', but there is no MORE-KEYS. KEYS must always be manually
+specified."
+  (declare (indent 1))
+  (let* ((name (if (symbolp name)
+                   (symbol-name name)
+                 name))
+         (inner-name (intern (concat "targets-inner-" name)))
+         (a-name (intern (concat "targets-a-" name)))
+         (inside-name (intern (concat "targets-inside-" name)))
+         (around-name (intern (concat "targets-around-" name)))
+         (next-inner-name (intern (concat "targets-inner-next-" name)))
+         (next-a-name (intern (concat "targets-a-next-" name)))
+         (next-inside-name (intern (concat "targets-inside-next-" name)))
+         (next-around-name (intern (concat "targets-around-next-" name)))
+         (last-inner-name (intern (concat "targets-inner-last-" name)))
+         (last-a-name (intern (concat "targets-a-last-" name)))
+         (last-inside-name (intern (concat "targets-inside-last-" name)))
+         (last-around-name (intern (concat "targets-around-last-" name)))
+         (remote-inner-name (intern (concat "targets-inner-remote-" name)))
+         (remote-a-name (intern (concat "targets-a-remote-" name)))
+         (remote-inside-name (intern (concat "targets-inside-remote-" name)))
+         (remote-around-name (intern (concat "targets-around-remote-" name)))
+         (select-inner `(targets--select-composite
+                         'inner beg end type count ',to-args))
+         (select-a `(targets--select-composite
+                     'a beg end type count ',to-args))
+         (select-inside `(targets--select-composite
+                          'inside beg end type count ',to-args))
+         (select-around `(targets--select-composite
+                          'around beg end type count ',to-args))
+         (keys (if (listp keys)
+                   keys
+                 (list keys))))
+    `(progn
+       (evil-define-text-object ,inner-name (count &optional beg end type)
+         ,(concat "Select inner " name ".")
+         (targets--set-last-text-object #',inner-name)
+         ,select-inner)
+
+       (evil-define-text-object ,a-name (count &optional beg end type)
+         ,(concat "Select a " name ".")
+         (targets--set-last-text-object #',a-name)
+         ,select-a)
+
+       (evil-define-text-object ,inside-name (count &optional beg end type)
+         ,(concat "Select inside " name ".")
+         (targets--set-last-text-object #',inside-name)
+         ,select-inside)
+
+       (evil-define-text-object ,around-name (count &optional beg end type)
+         ,(concat "Select around " name ".")
+         (targets--set-last-text-object #',around-name)
+         ,select-around)
+
+       ,@(mapcar
+          (lambda (info)
+            `(evil-define-text-object ,(cl-first info)
+               (count &optional beg end type)
+               ,(concat "Select" (cl-third info) name ".")
+               (targets--set-last-text-object #',(cl-first info))
+               (point-to-register 'targets--reset-position)
+               (setq targets--reset-position t)
+               (when (targets--composite-seek ',to-args nil count)
+                 ;; purposely don't give visual info since seeking
+                 (setq beg nil end nil)
+                 ;; count should only be used for seeking
+                 (setq count 1)
+                 ,(cl-second info))))
+          (list (list next-inner-name select-inner " the next inner ")
+                (list next-a-name select-a " the next outer ")
+                (list next-inside-name select-inside " inside the next ")
+                (list next-around-name select-around " around the next ")))
+
+       ,@(mapcar
+          (lambda (info)
+            `(evil-define-text-object ,(cl-first info)
+               (count &optional beg end type)
+               ,(concat "Select" (cl-third info) name ".")
+               (targets--set-last-text-object #',(cl-first info))
+               (point-to-register 'targets--reset-position)
+               (setq targets--reset-position t)
+               (when (targets--composite-seek ',to-args t count)
+                 (setq beg nil end nil count 1)
+                 ,(cl-second info))))
+          (list (list last-inner-name select-inner " the last inner ")
+                (list last-a-name select-a " the last outer ")
+                (list last-inside-name select-inside " inside the last ")
+                (list last-around-name select-around " around the last ")))
+
+       ,@(mapcar
+          (lambda (info)
+            `(evil-define-text-object ,(cl-first info)
+               (count &optional beg end type)
+               ,(concat "Select" (cl-third info) name " using avy.")
+               (targets--set-last-text-object #',(cl-first info))
+               (setq targets--reset-position t)
+               (setq targets--reset-window (get-buffer-window))
+               ;; fix repeat info
+               (when (evil-repeat-recording-p)
+                 (setq
+                  evil-repeat-info
+                  `(((lambda ()
+                       (setq prefix-arg ,current-prefix-arg)
+                       (setq unread-command-events
+                             ',(listify-key-sequence (this-command-keys)))
+                       (call-interactively #',evil-this-operator)))))
+                 (evil-repeat-stop))
+               (if (numberp
+                    ;; will push point to register if succeeds
+                    (targets--avy-seek ',(cl-first info)
+                                       ',(mapcar #'cl-first to-args)
+                                       ',(mapcar #'cl-second to-args)
+                                       ',(mapcar #'cl-third to-args)
+                                       (lambda ()
+                                         ,(cl-second info))))
+                   ,(cl-second info)
+                 (point-to-register 'targets--reset-position)
+                 ;; or else the overlays will remain
+                 (keyboard-quit)
+                 nil)))
+          (list (list remote-inner-name select-inner " some inner ")
+                (list remote-a-name select-a " some outer ")
+                (list remote-inside-name select-inside " inside some ")
+                (list remote-around-name select-around " around some ")))
+
+       ,(when bind
+          `(progn
+             ,@(mapcar (lambda (info)
+                         `(targets--define-keys ,(cl-first info)
+                                                ,(cl-second info)
+                                                ,(cl-third info)
+                                                ',keys))
+                       (list
+                        `(evil-inner-text-objects-map #',inner-name t)
+                        `(evil-outer-text-objects-map #',a-name t)
+                        `(evil-inner-text-objects-map #',next-inner-name
+                                                      ,next-key)
+                        `(evil-outer-text-objects-map #',next-a-name
+                                                      ,next-key)
+                        `(evil-inner-text-objects-map #',last-inner-name
+                                                      ,last-key)
+                        `(evil-outer-text-objects-map #',last-a-name
+                                                      ,last-key)
+                        `(evil-inner-text-objects-map #',remote-inner-name
+                                                      ,remote-key)
+                        `(evil-outer-text-objects-map #',remote-a-name
+                                                      ,remote-key)
+                        `(targets-inside-text-objects-map #',inside-name t)
+                        `(targets-around-text-objects-map #',around-name t)
+                        `(targets-inside-text-objects-map #',next-inside-name
+                                                          ,next-key)
+                        `(targets-around-text-objects-map #',next-around-name
+                                                          ,next-key)
+                        `(targets-inside-text-objects-map #',last-inside-name
+                                                          ,last-key)
+                        `(targets-around-text-objects-map #',last-around-name
+                                                          ,last-key)
+                        `(targets-inside-text-objects-map
+                          #',remote-inside-name ,remote-key)
+                        `(targets-around-text-objects-map
+                          #',remote-around-name ,remote-key))))))))
 
 ;;; * Specific Text Objects
 (defun targets--set-last-text-object (to)
