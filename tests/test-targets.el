@@ -526,7 +526,7 @@ considered as part of the region."
       (expect (targets-with "|a [b (c [d])]" "d2ind")
               :to-equal "a [b (|)]")
       (expect (targets-with "|a [b (c [d])]" "v2ind")
-              :to-equal "a [b (~c |[d])]"))))
+              :to-equal "a [b (~c [d|])]"))))
 
 ;;; * Specific Text Objects
 (describe "targets-last-text-object"
