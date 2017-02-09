@@ -184,7 +184,7 @@ considered as part of the region."
     (it "should select the contents of the next parens"
       (expect (targets-with "|a (b c d)" "vin(")
               :to-equal "a (~b c |d)"))
-    (it "should handle immediately nested"
+    (it "should handle immediately nested parens"
       (expect (targets-with "|a ((b c d))" "din(")
               :to-equal "a (|)")
       (expect (targets-with "|a ((b c d))" "vin(")

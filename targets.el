@@ -106,8 +106,8 @@ Each item should be a valid arglist for `targets-define-to'.")
 (defcustom targets-default-text-object nil
   "The default text object to use for `targets-last-text-object'.
 This is used whenever there is no last text object stored for the current
-  state (operator or visual). Note that the last text object for visual state is
-  cleared after exiting visual state."
+state (operator or visual). Note that the last text object for visual state is
+cleared after exiting visual state."
   :group 'targets
   :type 'function)
 
