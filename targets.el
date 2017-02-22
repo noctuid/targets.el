@@ -486,28 +486,70 @@ to find a matching text object. Push the initial position when seeking if
         (evil-set-jump orig-pos))
       range)))
 
-(defun targets--define-keys (keymap function prefix keys)
-  "In KEYMAP, bind multiple keys to FUNCTION.
-The keys are created by using PREFIX to prefix each key in KEYS."
-  (when prefix
+(defun targets--define-keys (hooks prefix infix keys def)
+  "Helper function used to bind keys.
+When HOOKS is non-nil, add a function to each hook to bind the keys locally.
+Otherwise bind the keys in the global visual and operator state maps. The keys
+will be constructed by combining PREFIX, INFIX, and entries in KEYS. If PREFIX
+or INFIX is nil, no keybindings will be made. If INFIX is non-nil but not a
+string, it will be excluded. All keys will be bound to DEF."
+  (when (and prefix infix)
     (while keys
-      (define-key keymap (concat (if (stringp prefix)
-                                     prefix
-                                   nil)
-                                 (pop keys))
-        function))))
+      (let ((key (concat prefix
+                         (if (stringp infix)
+                             infix
+                           nil)
+                         (pop keys))))
+        (if hooks
+            (dolist (hook hooks)
+              (add-hook
+               hook
+               `(lambda ()
+                  (define-key evil-visual-state-local-map ,key #',def)
+                  (define-key evil-operator-state-local-map ,key #',def))
+               t))
+          (define-key evil-operator-state-map key def)
+          (define-key evil-visual-state-map key def))))))
+
+(defun targets--local-visual-setup (&optional A)
+  "Locally bind I or A to behave as normal for visual block selections."
+  (if A
+      (make-local-variable 'targets-around-text-objects-map)
+    (make-local-variable 'targets-inside-text-objects-map))
+  (define-key evil-visual-state-local-map (if A "A" "I")
+    `(menu-item
+      ""
+      nil
+      :filter (lambda (&optional _)
+                (if (eq (evil-visual-type) 'block)
+                    ,(if A #''evil-append #''evil-insert)
+                  ,(if A
+                       'targets-around-text-objects-map
+                     'targets-inside-text-objects-map))))))
+
+(defun targets--define-local-I ()
+  "Locally bind I to ensure that it acts as `evil-insert' for visual block."
+  (targets--local-visual-setup))
+
+(defun targets--define-local-A ()
+  "Locally bind A to ensure that it acts as `evil-append' for visual block."
+  (targets--local-visual-setup t))
 
 ;; ** targets-define-to
 ;;;###autoload
 (cl-defmacro targets-define-to (name open close to-type &key
                                      linewise
-                                     mode
                                      bind
+                                     (inner-key "i")
+                                     (a-key "a")
+                                     (inside-key "I")
+                                     (around-key "A")
                                      (next-key "n")
                                      (last-key "l")
                                      (remote-key "r")
                                      keys
-                                     more-keys)
+                                     more-keys
+                                     hooks)
   "The main text object definition facility provided by targets.
 NAME is used to name the resulting text objects (e.g. targets-inner-NAME). OPEN,
 CLOSE, and TO-TYPE hold the required information to create the text objects.
@@ -515,41 +557,39 @@ TO-TYPE is one of pair, quote, separator, or object. OPEN and CLOSE should be
 strings. CLOSE is only used for pair text objects. LINEWISE is only used for
 object type text objects.
 
-If BIND is non-nil, additionally bind all of the created text objects. NEXT-KEY,
-LAST-KEY, and REMOTE-KEY can be changed to alter the intermediate keys used for
-next and last text objects. If they are nil, those text objects will not be
-bound at all. IF KEYS is not specified, it will default to OPEN and CLOSE. If
-TO-TYPE is object or OPEN or CLOSE are regexps/multiple characters (for TO-TYPE
-pair or separator), KEYS must be specified if BIND is non-nil. MORE-KEYS can be
-used to specify keys to be used in addtion to OPEN/CLOSE."
+If BIND is non-nil, additionally bind all of the created text objects.
+INNER-KEY, A-KEY, INSIDE-KEY, and AROUND-KEY can be changed to alter the prefix
+keys used for the corresponding text object types. NEXT-KEY, LAST-KEY, and
+REMOTE-KEY can be changed to alter the intermediate keys used for next, last,
+and remote text objects. If any of these are nil, the corresponding text objects
+will not be bound at all. IF KEYS is not specified, it will default to OPEN and
+CLOSE. If TO-TYPE is object or OPEN or CLOSE are regexps/multiple
+characters (for TO-TYPE pair or separator), KEYS must be explicitly specified if
+BIND is non-nil. MORE-KEYS can be used to specify keys to be used in addtion to
+OPEN/CLOSE. Both KEYS and MORE-KEYS can be a single key or a list of keys.
+
+If HOOKS is non-nil, add functions to locally bind the keys to the specified
+hooks instead of binding the keys globally. HOOKS can be either a single hook or
+a list of hooks."
   (let* ((name (if (symbolp name)
                    (symbol-name name)
                  name))
-         (inner-name (intern (concat "targets-inner-" mode name)))
-         (a-name (intern (concat "targets-a-" mode name)))
-         (inside-name (intern (concat "targets-inside-" mode name)))
-         (around-name (intern (concat "targets-around-" mode name)))
-         (next-inner-name (intern
-                           (concat "targets-inner-next-" mode name)))
-         (next-a-name (intern (concat "targets-a-next-" mode name)))
-         (next-inside-name (intern
-                            (concat "targets-inside-next-" mode name)))
-         (next-around-name (intern
-                            (concat "targets-around-next-" mode name)))
-         (last-inner-name (intern
-                           (concat "targets-inner-last-" mode name)))
-         (last-a-name (intern (concat "targets-a-last-" mode name)))
-         (last-inside-name (intern
-                            (concat "targets-inside-last-" mode name)))
-         (last-around-name (intern
-                            (concat "targets-around-last-" mode name)))
-         (remote-inner-name (intern
-                             (concat "targets-inner-remote-" mode name)))
-         (remote-a-name (intern (concat "targets-a-remote-" mode name)))
-         (remote-inside-name (intern
-                              (concat "targets-inside-remote-" mode name)))
-         (remote-around-name (intern
-                              (concat "targets-around-remote-" mode name)))
+         (inner-name (intern (concat "targets-inner-" name)))
+         (a-name (intern (concat "targets-a-"  name)))
+         (inside-name (intern (concat "targets-inside-" name)))
+         (around-name (intern (concat "targets-around-"  name)))
+         (next-inner-name (intern (concat "targets-inner-next-" name)))
+         (next-a-name (intern (concat "targets-a-next-" name)))
+         (next-inside-name (intern (concat "targets-inside-next-" name)))
+         (next-around-name (intern (concat "targets-around-next-" name)))
+         (last-inner-name (intern (concat "targets-inner-last-" name)))
+         (last-a-name (intern (concat "targets-a-last-" name)))
+         (last-inside-name (intern (concat "targets-inside-last-" name)))
+         (last-around-name (intern (concat "targets-around-last-" name)))
+         (remote-inner-name (intern (concat "targets-inner-remote-" name)))
+         (remote-a-name (intern (concat "targets-a-remote-" name)))
+         (remote-inside-name (intern (concat "targets-inside-remote-" name)))
+         (remote-around-name (intern (concat "targets-around-remote-" name)))
          (select-inner `(targets--select-to-with-seeking
                          ',to-type 'inner ,linewise ,open ,close beg end type
                          count))
@@ -574,6 +614,9 @@ used to specify keys to be used in addtion to OPEN/CLOSE."
                    (pair (list open close))
                    ((quote separator)
                     (list open)))))
+         (hooks (if (listp hooks)
+                    hooks
+                  (list hooks)))
          (keys (append keys more-keys)))
     `(progn
        (evil-define-text-object ,inner-name (count &optional beg end type)
@@ -679,44 +722,41 @@ used to specify keys to be used in addtion to OPEN/CLOSE."
 
        ,(when bind
           `(progn
+             (when (and ,around-key ',hooks
+                        (string= ,around-key "A"))
+               (dolist (hook ',hooks)
+                 (add-hook hook #'targets--define-local-A t)))
+             (when (and ,inside-key ',hooks
+                        (string= ,inside-key "I"))
+               (dolist (hook ',hooks)
+                 (add-hook hook #'targets--define-local-I t)))
              ,@(mapcar (lambda (info)
-                         `(targets--define-keys ,(cl-first info)
+                         `(targets--define-keys ',hooks
+                                                ,(cl-first info)
                                                 ,(cl-second info)
-                                                ,(cl-third info)
-                                                ',keys))
+                                                ',keys
+                                                ,(cl-third info)))
                        (append
                         (list
-                         `(evil-inner-text-objects-map #',inner-name t)
-                         `(evil-outer-text-objects-map #',a-name t)
-                         `(evil-inner-text-objects-map #',next-inner-name
-                                                       ,next-key)
-                         `(evil-outer-text-objects-map #',next-a-name
-                                                       ,next-key)
-                         `(evil-inner-text-objects-map #',last-inner-name
-                                                       ,last-key)
-                         `(evil-outer-text-objects-map #',last-a-name
-                                                       ,last-key)
-                         `(evil-inner-text-objects-map #',remote-inner-name
-                                                       ,remote-key)
-                         `(evil-outer-text-objects-map #',remote-a-name
-                                                       ,remote-key))
-
+                         `(,inner-key t #',inner-name)
+                         `(,a-key t #',a-name)
+                         `(,inner-key ,next-key #',next-inner-name)
+                         `(,a-key ,next-key #',next-a-name)
+                         `(,inner-key ,last-key #',last-inner-name)
+                         `(,a-key ,last-key #',last-a-name)
+                         `(,inner-key ,remote-key #',remote-inner-name)
+                         `(,a-key ,remote-key #',remote-a-name))
                         (unless (eq to-type 'object)
                           (list
-                           `(targets-inside-text-objects-map #',inside-name t)
-                           `(targets-around-text-objects-map #',around-name t)
-                           `(targets-inside-text-objects-map #',next-inside-name
-                                                             ,next-key)
-                           `(targets-around-text-objects-map #',next-around-name
-                                                             ,next-key)
-                           `(targets-inside-text-objects-map #',last-inside-name
-                                                             ,last-key)
-                           `(targets-around-text-objects-map #',last-around-name
-                                                             ,last-key)
-                           `(targets-inside-text-objects-map
-                             #',remote-inside-name ,remote-key)
-                           `(targets-around-text-objects-map
-                             #',remote-around-name ,remote-key))))))))))
+                           `(,inside-key t #',inside-name)
+                           `(,around-key t #',around-name)
+                           `(,inside-key ,next-key #',next-inside-name)
+                           `(,around-key ,next-key #',next-around-name)
+                           `(,inside-key ,last-key #',last-inside-name)
+                           `(,around-key ,last-key #',last-around-name)
+                           `(,inside-key ,remote-key #',remote-inside-name)
+                           `(,around-key ,remote-key
+                                         #',remote-around-name))))))))))
 
 ;; ** targets-define-composite-to
 (defun targets--composite-seek (text-objects &optional backwards count)
@@ -824,18 +864,23 @@ a region)."
 
 (cl-defmacro targets-define-composite-to (name to-args &key
                                                bind
+                                               (inner-key "i")
+                                               (a-key "a")
+                                               (inside-key "I")
+                                               (around-key "A")
                                                (next-key "n")
                                                (last-key "l")
                                                (remote-key "r")
-                                               keys)
+                                               keys
+                                               hooks)
   "Define a composite text object.
 NAME is used to name the resulting text objects (e.g. targets-inner-NAME).
 TO-ARGS is a list of list of arguments like you would pass to
 `targets-define-to': ((open close type &key linewise)...).
 
-BIND, NEXT-KEY, LAST-KEY, REMOTE-KEY, and KEYS all behave the same as in
-`targets-define-to', but there is no MORE-KEYS. KEYS must always be manually
-specified."
+BIND, INNER-KEY, A-KEY, INSIDE-KEY, AROUND-KEY, NEXT-KEY, LAST-KEY, REMOTE-KEY,
+KEYS, and HOOKS all behave the same as in `targets-define-to', but there is no
+MORE-KEYS. KEYS must always be manually specified."
   (declare (indent 1))
   (let* ((name (if (symbolp name)
                    (symbol-name name)
@@ -866,7 +911,10 @@ specified."
                           'around beg end type count ',to-args))
          (keys (if (listp keys)
                    keys
-                 (list keys))))
+                 (list keys)))
+         (hooks (if (listp hooks)
+                    hooks
+                  (list hooks))))
     `(progn
        (evil-define-text-object ,inner-name (count &optional beg end type)
          ,(concat "Select inner " name ".")
@@ -961,40 +1009,39 @@ specified."
 
        ,(when bind
           `(progn
+             (when (and ,around-key ',hooks
+                        (string= ,around-key "A"))
+               (dolist (hook ',hooks)
+                 (add-hook hook #'targets--define-local-A t)))
+             (when (and ,inside-key ',hooks
+                        (string= ,inside-key "I"))
+               (dolist (hook ',hooks)
+                 (add-hook hook #'targets--define-local-I t)))
              ,@(mapcar (lambda (info)
-                         `(targets--define-keys ,(cl-first info)
+                         `(targets--define-keys ',hooks
+                                                ,(cl-first info)
                                                 ,(cl-second info)
-                                                ,(cl-third info)
-                                                ',keys))
-                       (list
-                        `(evil-inner-text-objects-map #',inner-name t)
-                        `(evil-outer-text-objects-map #',a-name t)
-                        `(evil-inner-text-objects-map #',next-inner-name
-                                                      ,next-key)
-                        `(evil-outer-text-objects-map #',next-a-name
-                                                      ,next-key)
-                        `(evil-inner-text-objects-map #',last-inner-name
-                                                      ,last-key)
-                        `(evil-outer-text-objects-map #',last-a-name
-                                                      ,last-key)
-                        `(evil-inner-text-objects-map #',remote-inner-name
-                                                      ,remote-key)
-                        `(evil-outer-text-objects-map #',remote-a-name
-                                                      ,remote-key)
-                        `(targets-inside-text-objects-map #',inside-name t)
-                        `(targets-around-text-objects-map #',around-name t)
-                        `(targets-inside-text-objects-map #',next-inside-name
-                                                          ,next-key)
-                        `(targets-around-text-objects-map #',next-around-name
-                                                          ,next-key)
-                        `(targets-inside-text-objects-map #',last-inside-name
-                                                          ,last-key)
-                        `(targets-around-text-objects-map #',last-around-name
-                                                          ,last-key)
-                        `(targets-inside-text-objects-map
-                          #',remote-inside-name ,remote-key)
-                        `(targets-around-text-objects-map
-                          #',remote-around-name ,remote-key))))))))
+                                                ',keys
+                                                ,(cl-third info)))
+                       (append
+                        (list
+                         `(,inner-key t #',inner-name)
+                         `(,a-key t #',a-name)
+                         `(,inner-key ,next-key #',next-inner-name)
+                         `(,a-key ,next-key #',next-a-name)
+                         `(,inner-key ,last-key #',last-inner-name)
+                         `(,a-key ,last-key #',last-a-name)
+                         `(,inner-key ,remote-key #',remote-inner-name)
+                         `(,a-key ,remote-key #',remote-a-name)
+                         `(,inside-key t #',inside-name)
+                         `(,around-key t #',around-name)
+                         `(,inside-key ,next-key #',next-inside-name)
+                         `(,around-key ,next-key #',next-around-name)
+                         `(,inside-key ,last-key #',last-inside-name)
+                         `(,around-key ,last-key #',last-around-name)
+                         `(,inside-key ,remote-key #',remote-inside-name)
+                         `(,around-key ,remote-key
+                                       #',remote-around-name)))))))))
 
 ;;; * Specific Text Objects
 (defun targets--set-last-text-object (to)
@@ -1068,6 +1115,8 @@ See `targets-setup' for more details."
 
 ;;;###autoload
 (cl-defmacro targets-setup (&optional bind &key
+                                      (inner-key "i")
+                                      (a-key "a")
                                       (inside-key "I")
                                       (around-key "A")
                                       (next-key "n")
@@ -1075,21 +1124,26 @@ See `targets-setup' for more details."
                                       (remote-key "r"))
   "Perform basic setup for targets.el.
 All text objects in `targets-text-objects' are created and optionally bound.
-BIND, NEXT-KEY, LAST-KEY, and REMOTE-KEY are all passed to `targets-define-to'.
-They can be individually overridden in the entries in `targets-text-objects'.
-INSIDE-KEY and AROUND-KEY are bound to `targets-inside-text-objects-map' and
+BIND, INNER-KEY, A-KEY, INSIDE-KEY, AROUND-KEY, NEXT-KEY, LAST-KEY, and
+REMOTE-KEY are all passed to `targets-define-to'. They can be individually
+overridden in the entries in `targets-text-objects'. INSIDE-KEY and AROUND-KEY
+are bound to `targets-inside-text-objects-map' and
 `targets-around-text-objects-map' respectively. If they are not changed from
 their default \"I\" and \"A\", they will be bound for the char and line visual
-types but not for the block visual type. If NEXT-KEY, LAST-KEY, or REMOTE-KEY
-are specified as nil, the corresponding text objects will not be bound.
-Otherwise, those intermediate keys will be unbound before `targets-define-to' is
-run."
+types but not for the block visual type. If any of the key arguments are
+specified as nil, the corresponding text objects will not be bound. When
+NEXT-KEY, LAST-KEY, and REMOTE-KEY are non-nil, these keys will be unbound
+before `targets-define-to' is run."
   `(progn
      (targets--setup ,inside-key ,around-key ,next-key ,last-key ,remote-key)
      ;; create and bind text objects
      ,@(mapcar (lambda (to-args)
                  `(targets-define-to ,@(append to-args
                                                (list :bind bind
+                                                     :inner-key inner-key
+                                                     :a-key a-key
+                                                     :inside-key inside-key
+                                                     :around-key around-key
                                                      :next-key next-key
                                                      :last-key last-key
                                                      :remote-key remote-key))))

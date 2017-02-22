@@ -528,6 +528,29 @@ considered as part of the region."
       (expect (targets-with "|a [b (c [d])]" "v2ind")
               :to-equal "a [b (~c [d|])]"))))
 
+;;; * Mode Local Text Objects
+(describe "The local text object"
+  (describe "targets-inside-elisp-string"
+    (before-all (targets-define-to elisp-string  "\"" nil quote
+                                   :hooks emacs-lisp-mode-hook
+                                   :bind t
+                                   :keys ("'" "\""))
+                (targets-define-to text-single-quote  "'" nil quote
+                                   :hooks text-mode-hook
+                                   :bind t
+                                   :keys "'"))
+    (it "should be bound in emacs-lisp-mode"
+      (expect (targets-with "|foo \"bar\" 'baz'" "vI'")
+              :to-equal "foo \"~ba|r\" 'baz'"))
+    (it "should not be bound in text-mode"
+      (expect (targets-with "|foo \"bar\" 'baz'"
+                            (text-mode)
+                            "vI'")
+              :to-equal "foo \"bar\" '~ba|z'"))
+    (it "should not override \"I\" for a visual block selection"
+      (expect (targets-with "foo |bar" (kbd "C-v I"))
+              :to-equal "foo |bar"))))
+
 ;;; * Specific Text Objects
 (describe "targets-last-text-object"
   (before-all (setq targets-default-text-object #'targets-a-word)
