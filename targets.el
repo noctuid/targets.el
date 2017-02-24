@@ -1103,18 +1103,7 @@ See `targets-setup' for more details."
                                      #'evil-append
                                    targets-around-text-objects-map))))
       (define-key evil-visual-state-map
-        around-key targets-around-text-objects-map)))
-
-  ;; unbind intermediate keys
-  (when next-key
-    (define-key evil-inner-text-objects-map next-key nil)
-    (define-key evil-outer-text-objects-map next-key nil))
-  (when last-key
-    (define-key evil-inner-text-objects-map last-key nil)
-    (define-key evil-outer-text-objects-map last-key nil))
-  (when remote-key
-    (define-key evil-inner-text-objects-map remote-key nil)
-    (define-key evil-outer-text-objects-map remote-key nil)))
+        around-key targets-around-text-objects-map))))
 
 ;;;###autoload
 (cl-defmacro targets-setup (&optional bind &key
@@ -1134,9 +1123,7 @@ are bound to `targets-inside-text-objects-map' and
 `targets-around-text-objects-map' respectively. If they are not changed from
 their default \"I\" and \"A\", they will be bound for the char and line visual
 types but not for the block visual type. If any of the key arguments are
-specified as nil, the corresponding text objects will not be bound. When
-NEXT-KEY, LAST-KEY, and REMOTE-KEY are non-nil, these keys will be unbound
-before `targets-define-to' is run."
+specified as nil, the corresponding text objects will not be bound."
   `(progn
      (targets--setup ,inside-key ,around-key ,next-key ,last-key ,remote-key)
      ;; create and bind text objects
