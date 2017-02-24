@@ -125,7 +125,7 @@ This command will run the the last text object used in the current state (operat
 (define-key evil-operator-state-map (kbd "RET") #'targets-last-text-object)
 #+end_src
 * Configuration
-~targets-setup~ can be used to create and optionally bind all the text objects specified in =targets-text-objects= and =targets-user-text-objects=. Each is a list of lists of arguments to be passed to ~targets-define-to~. Entries in =targets-user-text-objects= that have the same name as a default text object in =targets-text-objects= are given precedence. This allows easily overriding any of the default text objects.
+~targets-setup~ can be used to create and optionally bind all the text objects specified in =targets-text-objects=, =targets-user-text-objects=, and =targets-composite-text-objects=. Each is a list of lists of arguments to be passed to ~targets-define-to~ (or ~targets-define-composite-to~ in the case of =targets-composite-text-objects=). Entries in =targets-user-text-objects= that have the same name as a default text object in =targets-text-objects= are given precedence. This allows easily overriding any of the default text objects. There are no default composite text objects.
 
 Please note that if you do not use ~targets-setup~, you will need to add ~(add-hook 'post-command-hook #'targets--reset-position)~ to your configuration to have next, last, and remote text objects keep the cursor position.
 
@@ -147,7 +147,7 @@ Note that all of the =*-key= keywords and =:bind= can be overridden for an indiv
     ...))
 #+end_src
 
-After targets has loaded, you can still add items to and remove items from =targets-text-objects= and =targets-user-text-objects= before running ~targets-setup~.
+After targets has loaded, you can still add items to and remove items from =targets-text-objects=, =targets-user-text-objects=, and =targets-composite-text-objects= before running ~targets-setup~.
 
 ** Example Use-package Setup
 #+begin_src emacs-lisp

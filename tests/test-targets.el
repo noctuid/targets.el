@@ -1,7 +1,17 @@
 ;;; Setup
 (require 'targets)
 
+(setq targets-composite-text-objects
+      '((pair-delim
+         (("(" ")" pair)
+          ("[" "]" pair)
+          ("{" "}" pair)
+          ("<" ">" pair))
+         :bind t
+         :keys "d")))
+
 (targets-setup t)
+
 (setq evil-move-cursor-back nil
       avy-keys (string-to-list "abcdefg"))
 
@@ -469,13 +479,6 @@ considered as part of the region."
 
 ;;; * Composite Text Objects
 (describe "The targets composite text object"
-  (before-all (targets-define-composite-to pair-delim
-                (("(" ")" pair)
-                 ("[" "]" pair)
-                 ("{" "}" pair)
-                 ("<" ">" pair))
-                :bind t
-                :keys "d"))
   (describe "targets-inner-pair-delim"
     (it "should act on the contents of pair delimiters"
       (expect (targets-with "{([|a])}" "did")

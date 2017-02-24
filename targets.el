@@ -100,8 +100,12 @@ These take precedence over text objects in `targets-text-objects'.")
           targets-quote-text-objects
           targets-separator-text-objects
           targets-object-text-objects)
-  "A list of text objects to be definite with `targets-setup'.
+  "A list of text objects to be defined with `targets-setup'.
 Each item should be a valid arglist for `targets-define-to'.")
+
+(defvar targets-composite-text-objects nil
+  "A list of composite text objects to be defined with `targets-setup'.
+Each item should be a valid arglist for `targets-define-composite-to'.")
 
 (defcustom targets-default-text-object nil
   "The default text object to use for `targets-last-text-object'.
@@ -1150,7 +1154,19 @@ before `targets-define-to' is run."
                        (cl-set-difference
                         targets-text-objects
                         targets-user-text-objects
-                        :key #'car)))))
+                        :key #'car)))
+     ,@(mapcar (lambda (to-args)
+                 `(targets-define-composite-to
+                      ,@(append to-args
+                                (list :bind bind
+                                      :inner-key inner-key
+                                      :a-key a-key
+                                      :inside-key inside-key
+                                      :around-key around-key
+                                      :next-key next-key
+                                      :last-key last-key
+                                      :remote-key remote-key))))
+               targets-composite-text-objects)))
 
 (provide 'targets)
 ;;; targets.el ends here
