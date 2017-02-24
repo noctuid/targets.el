@@ -127,6 +127,8 @@ This command will run the the last text object used in the current state (operat
 * Configuration
 ~targets-setup~ can be used to create and optionally bind all the text objects specified in =targets-text-objects= and =targets-user-text-objects=. Each is a list of lists of arguments to be passed to ~targets-define-to~. Entries in =targets-user-text-objects= that have the same name as a default text object in =targets-text-objects= are given precedence. This allows easily overriding any of the default text objects.
 
+Please note that if you do not use ~targets-setup~, you will need to add ~(add-hook 'post-command-hook #'targets--reset-position)~ to your configuration to have next, last, and remote text objects keep the cursor position.
+
 When run without any arguments, ~targets-setup~ will only create the text objects. It takes an optional, positional argument that specifies whether text objects should also be bound to keys. Keyword arguments can be used to customize the keys used in the bindings. =:inside-key= and =:around-key= determine what keys are bound to =targets-inside-text-objects-map= and =targets-around-text-objects-map= in the visual and operator states. They default to =I= and =A= respectively. If they are not changed from their defaults, they will be bound in a way such that =I= and =A= will continue to work as normal with a visual block selection.
 
 =inner-key=, =a-key=, =:next-key=, =:last-key=, and =:remote-key= can also be specified; they will be passed to ~targets-define-to~.

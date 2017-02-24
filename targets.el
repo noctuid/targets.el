@@ -1066,11 +1066,10 @@ MORE-KEYS. KEYS must always be manually specified."
                           targets-default-text-object)))
 
 ;;; * Setup
-(add-hook 'post-command-hook #'targets--reset-position)
-
 (defun targets--setup (inside-key around-key next-key last-key remote-key)
   "Set up basic configuration for targets.el.
 See `targets-setup' for more details."
+  (add-hook 'post-command-hook #'targets--reset-position)
   ;; bind inside and around keymaps
   (when inside-key
     (define-key evil-operator-state-map
