@@ -554,6 +554,20 @@ considered as part of the region."
       (expect (targets-with "foo |bar" (kbd "C-v I"))
               :to-equal "foo |bar"))))
 
+;;; * Text Object Specific Settings
+(describe "The line-local-paren text objects"
+  (before-all (targets-define-to line-local-paren "(" ")" pair
+                                 :let ((targets-bound
+                                        (lambda (&optional backwards)
+                                          (if backwards
+                                              (line-beginning-position)
+                                            (line-end-position)))))
+                                 :bind t
+                                 :keys "z"))
+  (it "should seek only within the current line"
+    (expect (targets-with "(foo) |bar\n(baz)" "diz")
+            :to-equal "(|) bar\n(baz)")))
+
 ;;; * Specific Text Objects
 (describe "targets-last-text-object"
   (before-all (setq targets-default-text-object #'targets-a-word)

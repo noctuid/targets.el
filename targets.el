@@ -161,11 +161,24 @@ Use `avy-all-windows' if 'use-avy."
           (const :tag "All windows on all frames" all-frames)))
 
 ;;; * User-customizable Functions
+(defcustom targets-push-jump-p #'targets-push-jump-p
+  "Function that determines whether to push to the evil jump list after seeking.
+See the default function `targets-push-jump-p' for information on how this
+function should behave."
+  :type 'function)
+
+
+(defcustom targets-bound #'targets-bound
+  "Function that determines the bound when seeking.
+See the default function `targets-bound' for information on how this function
+should behave."
+  :type 'function)
+
 (defun targets-push-jump-p (old-pos new-pos)
   "Whether or not to push to the evil jump list after a successful seek.
 This default function will push to the jump list when OLD-POS and NEW-POS are
-not on the same line. Override or redefine this function to change this behavior
-or change `targets-seek-functions' completely instead."
+not on the same line. A custom function can be used by changing the
+`targets-push-jump-p' variable."
   (not (= (line-number-at-pos old-pos) (line-number-at-pos new-pos))))
 
 (defun targets-bound (&optional backwards)
@@ -173,19 +186,27 @@ or change `targets-seek-functions' completely instead."
 BACKWARDS specifies that the bound should be for seeking backwards. This
 function is used both when there is no text object at the point and for next and
 last text objects. This default function bounds seeking to the beginning and end
-of the window. Override or redefine this function to change this behavior or
-change `targets-seek-functions' completely instead."
+of the window. A custom function can be used by changing the `targets-bound'
+variable."
   (if backwards
       (window-start)
     (window-end)))
 
 ;;; * Seeking Functions
+(defun targets--min (&rest numbers)
+  "Same as `min' but remove nils from NUMBERS."
+  (apply #'min (remove nil numbers)))
+
+(defun targets--max (&rest numbers)
+  "Same as `max' but remove nils from NUMBERS."
+  (apply #'max (remove nil numbers)))
+
 (defun targets-seek-forward (open _ type &optional count bound)
   "Seek forward to the text object specified by OPEN and TYPE COUNT times.
 If BOUND is non-nil, do not seek beyond BOUND. If successful, this function will
 move the point to beginning of the match and return its position."
   (setq count (or count 1))
-  (setq bound (or bound (targets-bound) (point-max)))
+  (setq bound (targets--min bound (funcall targets-bound) (point-max)))
   (let ((orig-pos (point))
         case-fold-search)
     (cl-case type
@@ -225,7 +246,7 @@ move the point to beginning of the match and return its position."
 times. If BOUND is non-nil, do not seek beyond BOUND. If successful, return the
 matched position (otherwise nil)."
   (setq count (or count 1))
-  (setq bound (or bound (targets-bound t) (point-min)))
+  (setq bound (targets--max bound (funcall targets-bound t) (point-min)))
   (let ((orig-pos (point))
         case-fold-search)
     (cl-case type
@@ -539,10 +560,22 @@ string, it will be excluded. All keys will be bound to DEF."
   "Locally bind A to ensure that it acts as `evil-append' for visual block."
   (targets--local-visual-setup t))
 
+(defmacro targets--define-text-object (name docstring letbinds &rest body)
+  "Wrapper for `evil-define-text-object'.
+NAME and DOCSTRING are the name and docstring for the text object. LETBINDS will
+be bound around BODY. The last targets text object will be set to NAME."
+  (declare (indent 3))
+  `(evil-define-text-object ,name (count &optional beg end type)
+     ,docstring
+     (targets--set-last-text-object #',name)
+     (let ,letbinds
+       ,@body)))
+
 ;; ** targets-define-to
 ;;;###autoload
 (cl-defmacro targets-define-to (name open close to-type &key
                                      linewise
+                                     let
                                      bind
                                      (inner-key "i")
                                      (a-key "a")
@@ -560,6 +593,9 @@ CLOSE, and TO-TYPE hold the required information to create the text objects.
 TO-TYPE is one of pair, quote, separator, or object. OPEN and CLOSE should be
 strings. CLOSE is only used for pair text objects. LINEWISE is only used for
 object type text objects.
+
+LET can be specified as a list of bindings (just like the first argument to
+`let') to locally bind variables in each of the created text objects.
 
 If BIND is non-nil, additionally bind all of the created text objects.
 INNER-KEY, A-KEY, INSIDE-KEY, and AROUND-KEY can be changed to alter the prefix
@@ -623,33 +659,32 @@ a list of hooks."
                   (list hooks)))
          (keys (append keys more-keys)))
     `(progn
-       (evil-define-text-object ,inner-name (count &optional beg end type)
-         ,(concat "Select inner " name ".")
-         (targets--set-last-text-object #',inner-name)
+       (targets--define-text-object ,inner-name
+           ,(concat "Select inner " name ".")
+           ,let
          ,select-inner)
 
-       (evil-define-text-object ,a-name (count &optional beg end type)
-         ,(concat "Select a " name ".")
-         (targets--set-last-text-object #',a-name)
+       (targets--define-text-object ,a-name
+           ,(concat "Select a " name ".")
+           ,let
          ,select-a)
 
        ,(unless (eq to-type 'object)
-          `(evil-define-text-object ,inside-name (count &optional beg end type)
-             ,(concat "Select inside " name ".")
-             (targets--set-last-text-object #',inside-name)
+          `(targets--define-text-object ,inside-name
+               ,(concat "Select inside " name ".")
+               ,let
              ,select-inside))
 
        ,(unless (eq to-type 'object)
-          `(evil-define-text-object ,around-name (count &optional beg end type)
-             ,(concat "Select around " name ".")
-             (targets--set-last-text-object #',around-name)
+          `(targets--define-text-object ,around-name
+               ,(concat "Select around " name ".")
+               ,let
              ,select-around))
 
        ,@(mapcar (lambda (info)
-                   `(evil-define-text-object ,(cl-first info)
-                      (count &optional beg end type)
-                      ,(concat "Select" (cl-third info) name ".")
-                      (targets--set-last-text-object #',(cl-first info))
+                   `(targets--define-text-object ,(cl-first info)
+                        ,(concat "Select" (cl-third info) name ".")
+                        ,let
                       (point-to-register 'targets--reset-position)
                       (setq targets--reset-position t)
                       (when (targets-seek-forward ,open nil ',to-type count)
@@ -669,10 +704,9 @@ a list of hooks."
 
        ,@(mapcar
           (lambda (info)
-            `(evil-define-text-object ,(cl-first info)
-               (count &optional beg end type)
-               ,(concat "Select" (cl-third info) name ".")
-               (targets--set-last-text-object #',(cl-first info))
+            `(targets--define-text-object ,(cl-first info)
+                 ,(concat "Select" (cl-third info) name ".")
+                 ,let
                (point-to-register 'targets--reset-position)
                (setq targets--reset-position t)
                (when (targets-seek-backward ,open ,close ',to-type count)
@@ -688,9 +722,9 @@ a list of hooks."
 
        ,@(mapcar
           (lambda (info)
-            `(evil-define-text-object ,(cl-first info)
-               (count &optional beg end type)
-               ,(concat "Select" (cl-third info) name " using avy.")
+            `(targets--define-text-object ,(cl-first info)
+                 ,(concat "Select" (cl-third info) name " using avy.")
+                 ,let
                (require 'avy)
                (targets--set-last-text-object #',(cl-first info))
                (setq targets--reset-position t)
@@ -867,6 +901,7 @@ a region)."
     range))
 
 (cl-defmacro targets-define-composite-to (name to-args &key
+                                               let
                                                bind
                                                (inner-key "i")
                                                (a-key "a")
@@ -882,9 +917,9 @@ NAME is used to name the resulting text objects (e.g. targets-inner-NAME).
 TO-ARGS is a list of list of arguments like you would pass to
 `targets-define-to': ((open close type &key linewise)...).
 
-BIND, INNER-KEY, A-KEY, INSIDE-KEY, AROUND-KEY, NEXT-KEY, LAST-KEY, REMOTE-KEY,
-KEYS, and HOOKS all behave the same as in `targets-define-to', but there is no
-MORE-KEYS. KEYS must always be manually specified."
+LET, BIND, INNER-KEY, A-KEY, INSIDE-KEY, AROUND-KEY, NEXT-KEY, LAST-KEY,
+REMOTE-KEY, KEYS, and HOOKS all behave the same as in `targets-define-to', but
+there is no MORE-KEYS. KEYS must always be manually specified."
   (declare (indent 1))
   (let* ((name (if (symbolp name)
                    (symbol-name name)
@@ -920,32 +955,31 @@ MORE-KEYS. KEYS must always be manually specified."
                     hooks
                   (list hooks))))
     `(progn
-       (evil-define-text-object ,inner-name (count &optional beg end type)
-         ,(concat "Select inner " name ".")
-         (targets--set-last-text-object #',inner-name)
+       (targets--define-text-object ,inner-name
+           ,(concat "Select inner " name ".")
+           ,let
          ,select-inner)
 
-       (evil-define-text-object ,a-name (count &optional beg end type)
-         ,(concat "Select a " name ".")
-         (targets--set-last-text-object #',a-name)
+       (targets--define-text-object ,a-name
+           ,(concat "Select a " name ".")
+           ,let
          ,select-a)
 
-       (evil-define-text-object ,inside-name (count &optional beg end type)
-         ,(concat "Select inside " name ".")
-         (targets--set-last-text-object #',inside-name)
+       (targets--define-text-object ,inside-name
+           ,(concat "Select inside " name ".")
+           ,let
          ,select-inside)
 
-       (evil-define-text-object ,around-name (count &optional beg end type)
-         ,(concat "Select around " name ".")
-         (targets--set-last-text-object #',around-name)
+       (targets--define-text-object ,around-name
+           ,(concat "Select around " name ".")
+           ,let
          ,select-around)
 
        ,@(mapcar
           (lambda (info)
-            `(evil-define-text-object ,(cl-first info)
-               (count &optional beg end type)
-               ,(concat "Select" (cl-third info) name ".")
-               (targets--set-last-text-object #',(cl-first info))
+            `(targets--define-text-object ,(cl-first info)
+                 ,(concat "Select" (cl-third info) name ".")
+                 ,let
                (point-to-register 'targets--reset-position)
                (setq targets--reset-position t)
                (when (targets--composite-seek ',to-args nil count)
@@ -961,9 +995,9 @@ MORE-KEYS. KEYS must always be manually specified."
 
        ,@(mapcar
           (lambda (info)
-            `(evil-define-text-object ,(cl-first info)
-               (count &optional beg end type)
-               ,(concat "Select" (cl-third info) name ".")
+            `(targets--define-text-object ,(cl-first info)
+                 ,(concat "Select" (cl-third info) name ".")
+                 ,let
                (targets--set-last-text-object #',(cl-first info))
                (point-to-register 'targets--reset-position)
                (setq targets--reset-position t)
@@ -977,9 +1011,9 @@ MORE-KEYS. KEYS must always be manually specified."
 
        ,@(mapcar
           (lambda (info)
-            `(evil-define-text-object ,(cl-first info)
-               (count &optional beg end type)
-               ,(concat "Select" (cl-third info) name " using avy.")
+            `(targets--define-text-object ,(cl-first info)
+                 ,(concat "Select" (cl-third info) name " using avy.")
+                 ,let
                (targets--set-last-text-object #',(cl-first info))
                (setq targets--reset-position t)
                (setq targets--reset-window (get-buffer-window))

@@ -60,10 +60,10 @@ By default, =i(=, for example, will not seek forward. ~evil-inner-paren~ can be 
 
 Instead of attempting to add more types of seeking to every evil selection function directly, this package just ignores the default seeking. If there is no text object at the point, this package will try the functions in =targets-seek-functions= in order in an attempt to find a text object. Like in =targets.vim=, seeking is customizable (by changing the functions in =targets-seek-functions=). By default, every text object defined with this package will seek first forward and then backward.
 
-If you want to create a new seeking function, you can look at the functions in =targets-seek-functions= and at the arguments they take. It is more likely that you will only want to make slight changes to the seeking behavior. For example, if you don't want backward seeking, you can remove that function from the list. If you don't want any seeking, you can set the list to =nil=. By default, seeking is bounded to to the text visible in the window. To alter the bounds, the =targets-bound= function can be redefined or overridden.
+If you want to create a new seeking function, you can look at the functions in =targets-seek-functions= and at the arguments they take. It is more likely that you will only want to make slight changes to the seeking behavior. For example, if you don't want backward seeking, you can remove that function from the list. If you don't want any seeking, you can set the list to =nil=. By default, seeking is bounded to the text visible in the window. To alter the bounds, the =targets-bound= variable can changed to specify a user-created function. See the default function's docstring for information on how a user-created function should behave.
 
 ** Jump List
-Like in =targets.vim=, you can also customize when seeking causes a new entry to be added to the jump list. To do this, you can redefine or override the ~targets-push-jump-p~ function. By default, a new entry is added when seeking moves the point to a different line.
+Like in =targets.vim=, you can also customize when seeking causes a new entry to be added to the jump list. To do this, you can change the =targets-push-jump-p= variable to specify a different function. See the default function's docstring for more information. By default, a new entry is added when seeking moves the point to a different line.
 
 * Text Object Creation
 This package provides three main macros for creating text objects.
@@ -93,7 +93,8 @@ The first argument is a symbol that will be used when naming the new text object
 
 Evil does not support defining mode-local text objects with ~evil-define-key~ (e.g. binding =iw= in the operator and visual states will not override the default =iw=). Buffer-local text objects do work though, so ~targets-define-to~ provides the =:hooks= keyword argument to specify hooks to be used to locally bind the defined text objects (instead of binding them globally). The argument can be a list (e.g. =:hook (emacs-lisp-mode-hook lisp-mode-hook)=) or a single hook (e.g =:hooks emacs-lisp-mode-hook=). Note that the name specified should be unique from any other targets text object names (e.g. =elisp-quote= if =quote= already exists).
 
-~targets-define-to~
+The =:let= keyword is also provided to allow locally defining variables for the created text objects. See [[#text-object-specific-settings][Text Object Specific Settings]] for more information
+
 ** ~targets-define-composite-to~
 Composite objects are composed of multiple regular text objects. Whichever text object gives the smallest selection that includes the current selection or point will be used. If there are no text objects around the current selection or at the point, composite text objects will still seek (if ~targets-seek-functions~ is non-nil). When seeking, the closest text object is favored. Counts still work to expand the selection multiple times (e.g. =d2id=).
 
@@ -165,6 +166,17 @@ After targets has loaded, you can still add items to and remove items from =targ
                    :remote-key nil))
 #+end_src
 * Settings
+** Text Object Specific Settings
+:PROPERTIES:
+:CUSTOM_ID: text-object-specific-settings
+:END:
+
+The =:let= keyword can be used to locally bind certain variables for all the text objects created by a single ~targets-define-to~ or ~targets-define-composite-to~ statement:
+#+begin_src emacs-lisp
+(targets-define-to paren "(" ")" pair
+                   :let ((targets-bound #'my-targets-paren-bound)))
+#+end_src
+
 ** Avy Settings
 For remote text objects, this package provides =targets-avy-style=, =targets-avy-keys=, =targets-avy-background=, =targets-avy-all-windows=, and =targets-avy-all-windows-alt=. All will override the corresponding avy settings when specified. When the first two are set to =nil= and the last three are set to the symbol =use-avy=, the corresponding avy setting will be used. Note that you can also use =avy-keys-alist= and =avy-styles-alist= for customizing the behavior of specific text objects.
 
