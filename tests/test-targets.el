@@ -555,7 +555,7 @@ considered as part of the region."
               :to-equal "foo |bar"))))
 
 ;;; * Text Object Specific Settings
-(describe "The line-local-paren text objects"
+(describe "The targets text object (with local settings)"
   (before-all (targets-define-to line-local-paren "(" ")" pair
                                  :let ((targets-bound
                                         (lambda (&optional backwards)
@@ -563,10 +563,36 @@ considered as part of the region."
                                               (line-beginning-position)
                                             (line-end-position)))))
                                  :bind t
-                                 :keys "z"))
-  (it "should seek only within the current line"
-    (expect (targets-with "(foo) |bar\n(baz)" "diz")
-            :to-equal "(|) bar\n(baz)")))
+                                 :keys "z")
+              (setq targets-settings-alist
+                    '((targets-a-line-local-paren
+                       .
+                       ((targets-bound
+                         (lambda (&optional backwards)
+                           (save-excursion
+                             (cond (backwards
+                                    (previous-line)
+                                    (line-beginning-position))
+                                   (t
+                                    (next-line)
+                                    (line-end-position))))))))
+                      ("^targets-[[:alpha:]]+-next"
+                       .
+                       ((targets-bound #'targets-bound))))))
+  (describe "targets-inner-line-local-paren"
+    (it "should seek only within the current line"
+      (expect (targets-with "(foo) |bar\n(baz)" "diz")
+              :to-equal "(|) bar\n(baz)")))
+  (describe "targets-a-line-local-paren"
+    (xit "should seek only seek within two lines"
+      (expect (targets-with "(foo) |bar\n(baz)" "daz")
+              :to-equal "(foo) bar\n|")
+      (expect (targets-with "(foo) |bar\n\n(baz)" "daz")
+              :to-equal "| bar\n\n(baz)")))
+  (describe "targets-inner-next-line-local-paren"
+    (xit "should seek as normal"
+      (expect (targets-with "(foo) |bar\n\n(baz)" "vinz")
+              :to-equal "(foo) bar\n\n(~ba|z)"))))
 
 ;;; * Specific Text Objects
 (describe "targets-last-text-object"

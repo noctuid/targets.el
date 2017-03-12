@@ -177,6 +177,15 @@ The =:let= keyword can be used to locally bind certain variables for all the tex
                    :let ((targets-bound #'my-targets-paren-bound)))
 #+end_src
 
+=targets-settings-alist= can also be set to locally bind certain variables for specific text objects (matched by the exact symbol or a regexp). These bindings will override those created with =:let=. At the moment, only the bindings for the symbol or regexp that is matched first will be used.
+#+begin_src emacs-lisp
+(setq targets-settings-alist
+      '((targets-inner-paren
+         ((targets-bound #'my-inner-paren-bound)))
+        ("^targets-[[:alpha:]]+-remote"
+         ((targets-bound #'my-smaller-bound)))))
+#+end_src
+
 ** Avy Settings
 For remote text objects, this package provides =targets-avy-style=, =targets-avy-keys=, =targets-avy-background=, =targets-avy-all-windows=, and =targets-avy-all-windows-alt=. All will override the corresponding avy settings when specified. When the first two are set to =nil= and the last three are set to the symbol =use-avy=, the corresponding avy setting will be used. Note that you can also use =avy-keys-alist= and =avy-styles-alist= for customizing the behavior of specific text objects.
 

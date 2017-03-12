@@ -160,6 +160,13 @@ Use `avy-all-windows' if 'use-avy."
           (const :tag "All windows on the current frame" t)
           (const :tag "All windows on all frames" all-frames)))
 
+(defvar targets-settings-alist nil
+  "An alist of text object names to settings.
+This variable allows specifying settings specific to individual text objects.
+Each car can be a sybmol or a regexp. Each cdr is a list of variable bindings
+for the matched text object(s) (like the first argument to `let'). Only the
+bindings for the first matched text object will be used.")
+
 ;;; * User-customizable Functions
 (defcustom targets-push-jump-p #'targets-push-jump-p
   "Function that determines whether to push to the evil jump list after seeking.
@@ -560,16 +567,35 @@ string, it will be excluded. All keys will be bound to DEF."
   "Locally bind A to ensure that it acts as `evil-append' for visual block."
   (targets--local-visual-setup t))
 
+(defmacro targets--let (name letbinds body)
+  "Helper for binding text object specific settings.
+NAME corresponds to the name of the current text object and will be used to
+match settings in `targets-settings-alist'. LETBINDS can contain default
+bindings that bindings in `targets-settings-alist' will override."
+  (declare (indent 2))
+  `(let (,@(append
+            letbinds
+            (or (cdr (assq name targets-settings-alist))
+                (assoc-default
+                 name
+                 targets-settings-alist
+                 (lambda (regexp name)
+                   (and (stringp regexp)
+                        (string-match regexp (symbol-name name))))))))
+     ,@body))
+
 (defmacro targets--define-text-object (name docstring letbinds &rest body)
-  "Wrapper for `evil-define-text-object'.
-NAME and DOCSTRING are the name and docstring for the text object. LETBINDS will
-be bound around BODY. The last targets text object will be set to NAME."
+  "Wrapper for `evil-define-text-object'.)
+NAME and DOCSTRING are the name and docstring for the text object. The last
+targets text object will be set to NAME. LETBINDS will be bound around BODY
+along with any matched settings from `targets-settings-alist'. When an option is
+in both, the latter will take precedence."
   (declare (indent 3))
   `(evil-define-text-object ,name (count &optional beg end type)
      ,docstring
      (targets--set-last-text-object #',name)
-     (let ,letbinds
-       ,@body)))
+     (targets--let ,name ,letbinds
+       ,body)))
 
 ;; ** targets-define-to
 ;;;###autoload
