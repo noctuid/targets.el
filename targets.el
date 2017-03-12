@@ -1118,8 +1118,6 @@ there is no MORE-KEYS. KEYS must always be manually specified."
   "Helper to clear `targets--last-visual-text-object'."
   (setq targets--last-visual-text-object nil))
 
-(add-hook 'evil-visual-state-exit-hook #'targets--clear-last-visual-text-object)
-
 ;;;###autoload
 (defun targets-last-text-object ()
   "Run the last text object or fall back to `targets-default-text-object'."
@@ -1134,6 +1132,8 @@ there is no MORE-KEYS. KEYS must always be manually specified."
   "Set up basic configuration for targets.el.
 See `targets-setup' for more details."
   (add-hook 'post-command-hook #'targets--reset-position)
+  (add-hook 'evil-visual-state-exit-hook
+            #'targets--clear-last-visual-text-object)
   ;; bind inside and around keymaps
   (when inside-key
     (define-key evil-operator-state-map
