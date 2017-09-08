@@ -118,7 +118,7 @@ Not yet implemented.
 
 * Specific Provided Text Objects
 ** ~targets-last-text-object~
-This command will run the the last text object used in the current state (operator or visual). For operator state, it may be useful if you want to use a different operator with the previous text object (otherwise you could just use ~evil-repeat~). It is probably more useful for visual state where it can be used as a shorter key to expand the region. The last text object for visual state resets in between visual selections. You can set =targets-default-text-object= to a default text object to use the first time ~targets-last-text-object~ is run after visual state is entered.
+This command will run the last text object used in the current state (operator or visual). Note that this only works for text objects defined with targets.el. For operator state, it may be useful if you want to use a different operator with the previous text object (otherwise you could just use ~evil-repeat~). It is probably more useful for visual state where it can be used as a shorter key to expand the region. The last text object for visual state resets in between visual selections. You can set =targets-default-text-object= to a default text object to use the first time ~targets-last-text-object~ is run after visual state is entered.
 
 ~targets-last-text-object~ is unbound by default; I personally bind it to =RET=:
 #+begin_src emacs-lisp

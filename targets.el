@@ -1122,10 +1122,13 @@ there is no MORE-KEYS. KEYS must always be manually specified."
 (defun targets-last-text-object ()
   "Run the last text object or fall back to `targets-default-text-object'."
   (interactive)
-  (call-interactively (or (if (evil-visual-state-p)
-                              targets--last-visual-text-object
-                            targets--last-operator-text-object)
-                          targets-default-text-object)))
+  (let ((to (or (if (evil-visual-state-p)
+                    targets--last-visual-text-object
+                  targets--last-operator-text-object)
+                targets-default-text-object)))
+    (when to
+      (targets--let targets-last-text-object nil
+        ((call-interactively to))))))
 
 ;;; * Setup
 (defun targets--setup (inside-key around-key next-key last-key remote-key)
