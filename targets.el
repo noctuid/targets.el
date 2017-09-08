@@ -115,6 +115,12 @@ cleared after exiting visual state."
   :group 'targets
   :type 'function)
 
+(defcustom targets-share-last-text-object nil
+  "When not nil, there is no distinction between visual text objects
+and operator ones."
+  :group 'targets
+  :type 'boolean)
+
 (defvar targets--last-visual-text-object
   "Holds the last text object used in visual state.")
 
@@ -1110,19 +1116,22 @@ there is no MORE-KEYS. KEYS must always be manually specified."
 ;;; * Specific Text Objects
 (defun targets--set-last-text-object (to)
   "Helper to set the last text object to TO."
-  (if (evil-visual-state-p)
+  (if (and targets-share-last-text-object
+           (evil-visual-state-p))
       (setq targets--last-visual-text-object to)
     (setq targets--last-operator-text-object to)))
 
 (defun targets--clear-last-visual-text-object ()
   "Helper to clear `targets--last-visual-text-object'."
-  (setq targets--last-visual-text-object nil))
+  (unless targets-share-last-text-object
+    (setq targets--last-visual-text-object nil)))
 
 ;;;###autoload
 (defun targets-last-text-object ()
   "Run the last text object or fall back to `targets-default-text-object'."
   (interactive)
-  (let ((to (or (if (evil-visual-state-p)
+  (let ((to (or (if (and targets-share-last-text-object
+                         (evil-visual-state-p))
                     targets--last-visual-text-object
                   targets--last-operator-text-object)
                 targets-default-text-object)))
