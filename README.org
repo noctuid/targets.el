@@ -111,6 +111,21 @@ Here is an example of defining composite text objects that will act on any of th
   :keys "d")
 #+end_src
 
+Here's an example that creates the equivalents of the [[https://github.com/noctuid/evil-textobj-anyblock][anyblock]] text objects:
+#+begin_src emacs-lisp
+(targets-define-composite-to anyblock
+  (("(" ")" pair)
+   ("[" "]" pair)
+   ("{" "}" pair)
+   ("<" ">" pair)
+   ("\"" "\"" quote)
+   ("'" "'" quote)
+   ("`" "`" quote)
+   ("“" "”" quote))
+  :bind t
+  :keys "b")
+#+end_src
+
 ~targets-define-composite-to~ has the same keyword arguments as ~targets-define-to~ except there is no =:more-keys=. If =:bind= is specified as non-nil, =:keys= must also be specified.
 
 ** ~targets-define-simple-to~
