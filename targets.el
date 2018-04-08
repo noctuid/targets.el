@@ -37,7 +37,7 @@
 (defgroup targets nil
   "Provides extensions to evil's text objects."
   :group 'evil
-  :prefix 'targets-)
+  :prefix "targets-")
 
 (defcustom targets-seek-functions
   (list #'targets-seek-forward #'targets-seek-backward)
