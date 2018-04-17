@@ -97,7 +97,7 @@ The first argument is a symbol that will be used when naming the new text object
 (targets-define-to word 'evil-word nil object :bind t :keys "w")
 #+end_src
 
-Evil does not support defining mode-local text objects with ~evil-define-key~ (e.g. binding =iw= in the operator and visual states will not override the default =iw=). Buffer-local text objects do work though, so ~targets-define-to~ provides the =:hooks= keyword argument to specify hooks to be used to locally bind the defined text objects (instead of binding them globally). The argument can be a list (e.g. =:hook (emacs-lisp-mode-hook lisp-mode-hook)=) or a single hook (e.g =:hooks emacs-lisp-mode-hook=). Note that the name specified should be unique from any other targets text object names (e.g. =elisp-quote= if =quote= already exists).
+Evil does not support defining mode-local text objects with ~evil-define-key~ (e.g. binding =iw= in the operator and visual states will not override the default =iw=). Buffer-local text objects do work though, so ~targets-define-to~ provides the =:hooks= keyword argument to specify hooks to be used to locally bind the defined text objects (instead of binding them globally). The argument can be a list (e.g. =:hooks (emacs-lisp-mode-hook lisp-mode-hook)=) or a single hook (e.g =:hooks emacs-lisp-mode-hook=). Note that the name specified should be unique from any other targets text object names (e.g. =elisp-quote= if =quote= already exists).
 
 The =:let= keyword is also provided to allow locally defining variables for the created text objects. See [[#text-object-specific-settings][Text Object Specific Settings]] for more information
 
