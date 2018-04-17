@@ -113,7 +113,7 @@ This is used whenever there is no last text object stored for the current
 state (operator or visual). Note that the last text object for visual state is
 cleared after exiting visual state."
   :group 'targets
-  :type 'function)
+  :type '(choice function (const nil)))
 
 (defvar targets--last-visual-text-object
   "Holds the last text object used in visual state.")
