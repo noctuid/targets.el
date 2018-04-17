@@ -184,7 +184,7 @@ variable."
   "Seek forward to the text object specified by OPEN and TYPE COUNT times.
 If BOUND is non-nil, do not seek beyond BOUND. If successful, this function will
 move the point to beginning of the match and return its position."
-  (setq count (or count 1))
+  (or count (setq count 1))
   (setq bound (targets--min bound (funcall targets-bound) (point-max)))
   (let ((orig-pos (point))
         case-fold-search)
@@ -207,16 +207,19 @@ move the point to beginning of the match and return its position."
                (goto-char orig-pos)
              (beginning-of-thing 'evil-quote)))))
       (object
-       (ignore-errors (end-of-thing open))
-       (let ((pos (point)))
-         (forward-thing open count)
-         (when (or (= (point) pos)
-                   (> (point) bound)
-                   ;; may not actually be at thing
-                   ;; TODO guarunteed to return non-nil on success?
-                   ;; seems to be the case
-                   (not (ignore-errors (beginning-of-thing open))))
-           (goto-char orig-pos)))))
+       (let ((thing open))
+         ;; additional property for things specifically for targets.el
+         ;; if the thing is nestable (e.g. lists), going to the end would skip
+         ;; past any nested things
+         (unless (get thing 'nestable)
+           (ignore-errors (end-of-thing thing)))
+         (let ((pos (point)))
+           (forward-thing thing count)
+           (when (or (= (point) pos)
+                     (> (point) bound)
+                     ;; this will return non-nil (the pos) on success
+                     (not (ignore-errors (beginning-of-thing thing))))
+             (goto-char orig-pos))))))
     (unless (= (point) orig-pos)
       (point))))
 
@@ -276,13 +279,15 @@ matched position (otherwise nil)."
                    (< (point) bound))
            (goto-char orig-pos))))
       (object
-       (ignore-errors (beginning-of-thing open))
-       (let ((pos (point)))
-         (forward-thing open (- count))
-         (when (or (= (point) pos)
-                   (< (point) bound)
-                   (not (ignore-errors (beginning-of-thing open))))
-           (goto-char orig-pos)))))
+       (let ((thing open))
+         (unless (get thing 'nestable)
+           (ignore-errors (beginning-of-thing thing)))
+         (let ((pos (point)))
+           (forward-thing thing (- count))
+           (when (or (= (point) pos)
+                     (< (point) bound)
+                     (not (ignore-errors (beginning-of-thing thing))))
+             (goto-char orig-pos))))))
     (unless (= (point) orig-pos)
       (point))))
 
