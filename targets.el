@@ -121,44 +121,16 @@ cleared after exiting visual state."
 (defvar targets--last-operator-text-object
   "Holds the last text object used in operator state.")
 
-(defcustom targets-avy-style nil
-  "Method for displaying avy overlays.
-Use `avy-style' if nil."
-  :group 'targets
-  :type '(choice
-          (const :tag "Pre" pre)
-          (const :tag "At" at)
-          (const :tag "At Full" at-full)
-          (const :tag "Post" post)
-          (const :tag "De Bruijn" de-bruijn)))
+;; these only override the corresponding avy settings when bound by the user
+(defvar targets-avy-style)
 
-(defcustom targets-avy-keys nil
-  "Keys used for selecting urls.
-Use `avy-keys' if nil."
-  :group 'targets
-  :type '(repeat :tag "Keys" (choice (character :tag "char"))))
+(defvar targets-avy-keys)
 
-(defcustom targets-avy-background 'use-avy
-  "When non-nil, a gray background will be added during the selection.
-Use `avy-background' if 'use-avy."
-  :type 'boolean)
+(defvar targets-avy-background)
 
-(defcustom targets-avy-all-windows nil
-  "Determine the list of windows to consider in search of text objects.
-Use `avy-all-windows' if 'use-avy."
-  :type
-  '(choice
-    (const :tag "All Frames" all-frames)
-    (const :tag "This Frame" t)
-    (const :tag "This Window" nil)))
+(defvar targets-avy-all-windows)
 
-(defcustom targets-avy-all-windows-alt nil
-  "The alternative `targets-avy-all-windows' for use with
-\\[universal-argument]. Use `avy-all-windows-alt' if 'use-avy."
-  :type '(choice
-          (const :tag "Current window" nil)
-          (const :tag "All windows on the current frame" t)
-          (const :tag "All windows on all frames" all-frames)))
+(defvar targets-avy-all-windows-alt)
 
 (defvar targets-settings-alist nil
   "An alist of text object names to settings.
@@ -386,17 +358,21 @@ and `avy-keys-alist' can be customize for COMMAND. SELECT-FUNC is used to
 determine if there is a text object at the beginning of the visible regions of
 the window. A text object at the beginning of the window will only included if
 it starts at or after the beginning of the window."
-    (let ((avy-style (or targets-avy-style avy-style))
-          (avy-keys (or targets-avy-keys avy-keys))
-          (avy-background (if (eq targets-avy-background 'use-avy)
-                              avy-background
-                            targets-avy-background))
-          (avy-all-windows (if (eq targets-avy-all-windows 'use-avy)
-                               avy-all-windows
-                             targets-avy-all-windows))
-          (avy-all-windows-alt (if (eq targets-avy-all-windows-alt 'use-avy)
-                                   avy-all-windows-alt
-                                 targets-avy-all-windows-alt))
+    (let ((avy-style (if (boundp 'targets-avy-style)
+                         targets-avy-style
+                       avy-style))
+          (avy-keys (if (boundp 'targets-avy-keys)
+                        targets-avy-keys
+                      avy-keys))
+          (avy-background (if (boundp 'targets-avy-background)
+                              targets-avy-background
+                            avy-background))
+          (avy-all-windows (if (boundp 'targets-avy-all-windows)
+                               targets-avy-all-windows
+                             avy-all-windows))
+          (avy-all-windows-alt (if (boundp 'targets-avy-all-windows-alt)
+                                   targets-avy-all-windows-alt
+                                 avy-all-windows-alt))
           ;; doesn't seem to be necessary
           ;; (scroll-margin 0)
           )

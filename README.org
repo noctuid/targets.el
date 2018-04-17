@@ -202,7 +202,7 @@ The =:let= keyword can be used to locally bind certain variables for all the tex
 #+end_src
 
 ** Avy Settings
-For remote text objects, this package provides =targets-avy-style=, =targets-avy-keys=, =targets-avy-background=, =targets-avy-all-windows=, and =targets-avy-all-windows-alt=. All will override the corresponding avy settings when specified. When the first two are set to =nil= and the last three are set to the symbol =use-avy=, the corresponding avy setting will be used. Note that you can also use =avy-keys-alist= and =avy-styles-alist= for customizing the behavior of specific text objects.
+For remote text objects, the user can change =targets-avy-style=, =targets-avy-keys=, =targets-avy-background=, =targets-avy-all-windows=, and =targets-avy-all-windows-alt=. All will override the corresponding avy settings when set by the user. By default, they are not bound, and the values of the corresponding avy settings are used. Note that you can also use =avy-keys-alist= and =avy-styles-alist= for customizing the behavior of specific text objects.
 
 Although =targets-avy-all-windows= and =targets-avy-all-windows-alt= exist, changing them is not recommended. Using remote text objects with more than one window is not fully supported (and not all that useful). While it will work to create a visual selection, it will not work with other operators unless the other window is for the same buffer. I have not found a way around this at the moment.
 
