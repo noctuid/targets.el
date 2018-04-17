@@ -135,7 +135,7 @@ cleared after exiting visual state."
 (defvar targets-settings-alist nil
   "An alist of text object names to settings.
 This variable allows specifying settings specific to individual text objects.
-Each car can be a sybmol or a regexp. Each cdr is a list of variable bindings
+Each car can be a symbol or a regexp. Each cdr is a list of variable bindings
 for the matched text object(s) (like the first argument to `let'). Only the
 bindings for the first matched text object will be used.")
 
