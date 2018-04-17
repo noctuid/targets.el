@@ -32,7 +32,8 @@ A quote consists of an opening and closing delimiter that are the same. The deli
 The main difference between a separator and a quote is that there do not need to be a balanced number of separators. A separator delimiter can be a regexp. =a= also behaves slightly differently. It includes the first separator but not the second, so that after a deletion, a separator will still be left in between the text on either side.
 
 ** Objects/Things
-These are text objects that use =thingatpt.el= such as =evil-word= and =evil-sentence=. Since =i= and =a= already act as =I= and =A= by default, no =I= or =A= text objects are created.
+These are text objects that use =thingatpt.el= such as =evil-word= and =evil-sentence=. Note that =i= and =a= will act as =I= and =A= for most text objects by default (e.g. there are no delimiters to consider for an =evil-word=). =I= and =A= text objects will still be created because it is still possible and sometimes useful to have different behavior for inner vs. outer things besides how they handle whitespace (e.g. you could potentially create an inner sentence text object that excludes quotations and org markup; see [[https://github.com/noctuid/emacs-sentence-navigation][sentence-navigation.el]]).
+. [[#targets-define-to][~targets-define-to~]] allows specifying different things to use for inner vs. outea text objects to handle this case.
 
 ** Miscellaneous/Simple
 Since this package is about adding extra text objects, it also adds a few other specific text objects that evil does not have by default:
@@ -77,11 +78,16 @@ Here is a basic example with all the required arguments:
 #+end_src
 This will result in the creation of 16 text objects (=inner=, =a=, =inside=, =around=, and the next, last, and remote versions of these).
 
-The first argument is a symbol that will be used when naming the new text objects. The next two arguments specify the delimiters for the text objects. The fourth arguments specifies the type of the text objects. The names for the types are =pair=, =quote=, =separator=, and =object=. Only =pair= will use the closing delimiter. The opening delimiter should always be a string except for an =object=, for which it should be the symbol corresponding to the thing.
+The first argument is a symbol that will be used when naming the new text objects. The next two arguments specify the delimiters for the text objects. The fourth arguments specifies the type of the text objects. The names for the types are =pair=, =quote=, =separator=, and =object=. Only pairs require the closing delimiter. The opening delimiter should always be a string except for an =object=, for which it should be the symbol corresponding to the thing. For objects, if you specify two things, the first will be used for inner text objects and the second for outer text objects.
 #+begin_src emacs-lisp
 (targets-define-to double-quote "\"" nil quote)
 (targets-define-to comma "," nil separator)
 (targets-define-to word 'evil-word nil object)
+;; to use different things for inner vs. outer text-objects
+(targets-define-to sentence
+                   'sentence-nav-evil-inner-sentence
+                   'sentence-nav-evil-a-sentence
+                   object)
 #+end_src
 
 ~targets-define-to~ accepts additional keyword arguments. Specifying =bind= as non-nil will also bind the created text objects. By default, text objects are bound to the opening delimiter (and closing delimiter for pairs, e.g =i(=, =i)=, =a(=, =a)=, etc.). If the delimiters are regexps or the type is =object=, =:keys= must be explicitly specified. =:keys= completely replaces the default keys, and =:more-keys= adds to them. Both can be either a single key or a list of keys. =:inner-key=, =:a-key=, =:inside-key=, =:around-key=, =:next-key=, =:last-key=, and =:remote-key= can also be specified to change the intermediate keys used from their defaults. If any of them is set to =nil=, the corresponding text objects will not be bound.

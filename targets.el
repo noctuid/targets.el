@@ -435,7 +435,11 @@ objects."
                    (evil-select-quote open-char beg end type count)))
                 (object
                  (if inclusive
-                     (evil-select-an-object open beg end type count linewise)
+                     (if close
+                         (evil-select-inner-object close beg end type count
+                                                   linewise)
+                       (evil-select-an-object open beg end type count
+                                              linewise))
                    (evil-select-inner-object open beg end type count
                                              linewise)))))))
       (when range
@@ -676,17 +680,15 @@ a list of hooks."
            ,let
          ,select-a)
 
-       ,(unless (eq to-type 'object)
-          `(targets--define-text-object ,inside-name
-               ,(concat "Select inside " name ".")
-               ,let
-             ,select-inside))
+       (targets--define-text-object ,inside-name
+           ,(concat "Select inside " name ".")
+           ,let
+         ,select-inside)
 
-       ,(unless (eq to-type 'object)
-          `(targets--define-text-object ,around-name
-               ,(concat "Select around " name ".")
-               ,let
-             ,select-around))
+       (targets--define-text-object ,around-name
+           ,(concat "Select around " name ".")
+           ,let
+         ,select-around)
 
        ,@(mapcar (lambda (info)
                    `(targets--define-text-object ,(cl-first info)
@@ -700,14 +702,11 @@ a list of hooks."
                         ;; count should only be used for seeking
                         (setq count 1)
                         ,(cl-second info))))
-                 (append
-                  (list (list next-inner-name select-inner " the next inner ")
-                        (list next-a-name select-a " the next outer "))
-                  (unless (eq to-type 'object)
-                    (list
-                     (list next-inside-name select-inside " inside the next ")
-                     (list next-around-name select-around
-                           " around the next ")))))
+                 (list (list next-inner-name select-inner " the next inner ")
+                       (list next-a-name select-a " the next outer ")
+                       (list next-inside-name select-inside " inside the next ")
+                       (list next-around-name select-around
+                             " around the next ")))
 
        ,@(mapcar
           (lambda (info)
@@ -719,13 +718,10 @@ a list of hooks."
                (when (targets-seek-backward ,open ,close ',to-type count)
                  (setq beg nil end nil count 1)
                  ,(cl-second info))))
-          (append
-           (list (list last-inner-name select-inner " the last inner ")
-                 (list last-a-name select-a " the last outer "))
-           (unless (eq to-type 'object)
-             (list
-              (list last-inside-name select-inside " inside the last ")
-              (list last-around-name select-around " around the last ")))))
+          (list (list last-inner-name select-inner " the last inner ")
+                (list last-a-name select-a " the last outer ")
+                (list last-inside-name select-inside " inside the last ")
+                (list last-around-name select-around " around the last ")))
 
        ,@(mapcar
           (lambda (info)
@@ -759,11 +755,9 @@ a list of hooks."
                  nil)))
           (append
            (list (list remote-inner-name select-inner " some inner ")
-                 (list remote-a-name select-a " some outer "))
-           (unless (eq to-type 'object)
-             (list
-              (list remote-inside-name select-inside " inside some ")
-              (list remote-around-name select-around " around some ")))))
+                 (list remote-a-name select-a " some outer ")
+                 (list remote-inside-name select-inside " inside some ")
+                 (list remote-around-name select-around " around some "))))
 
        ,(when bind
           `(progn
@@ -781,27 +775,23 @@ a list of hooks."
                                                 ,(cl-second info)
                                                 ',keys
                                                 ,(cl-third info)))
-                       (append
-                        (list
-                         `(,inner-key t #',inner-name)
-                         `(,a-key t #',a-name)
-                         `(,inner-key ,next-key #',next-inner-name)
-                         `(,a-key ,next-key #',next-a-name)
-                         `(,inner-key ,last-key #',last-inner-name)
-                         `(,a-key ,last-key #',last-a-name)
-                         `(,inner-key ,remote-key #',remote-inner-name)
-                         `(,a-key ,remote-key #',remote-a-name))
-                        (unless (eq to-type 'object)
-                          (list
-                           `(,inside-key t #',inside-name)
-                           `(,around-key t #',around-name)
-                           `(,inside-key ,next-key #',next-inside-name)
-                           `(,around-key ,next-key #',next-around-name)
-                           `(,inside-key ,last-key #',last-inside-name)
-                           `(,around-key ,last-key #',last-around-name)
-                           `(,inside-key ,remote-key #',remote-inside-name)
-                           `(,around-key ,remote-key
-                                         #',remote-around-name))))))))))
+                       (list
+                        `(,inner-key t #',inner-name)
+                        `(,a-key t #',a-name)
+                        `(,inner-key ,next-key #',next-inner-name)
+                        `(,a-key ,next-key #',next-a-name)
+                        `(,inner-key ,last-key #',last-inner-name)
+                        `(,a-key ,last-key #',last-a-name)
+                        `(,inner-key ,remote-key #',remote-inner-name)
+                        `(,a-key ,remote-key #',remote-a-name)
+                        `(,inside-key t #',inside-name)
+                        `(,around-key t #',around-name)
+                        `(,inside-key ,next-key #',next-inside-name)
+                        `(,around-key ,next-key #',next-around-name)
+                        `(,inside-key ,last-key #',last-inside-name)
+                        `(,around-key ,last-key #',last-around-name)
+                        `(,inside-key ,remote-key #',remote-inside-name)
+                        `(,around-key ,remote-key #',remote-around-name))))))))
 
 ;; ** targets-define-composite-to
 (defun targets--composite-seek (text-objects &optional backwards count)
