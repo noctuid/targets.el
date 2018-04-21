@@ -137,6 +137,173 @@ Here's an example that creates the equivalents of the [[https://github.com/noctu
 ** ~targets-define-simple-to~
 Not yet implemented.
 
+** Creating New/Integrating Existing Text Objects using =thingatpt.el=
+*** Why =thingatpt.el=?
+Targets already supports creating pair, quote, and separator text objects directly. For more complicated text objects, targets can automatically integrate with any text objects built on top off =thingatpt= (e.g. any text objects that use ~evil-select-inner-object~ or ~evil-select-an-object~). Text objects that use ~evil-range~ directly can generally be rewritten to use ~evil-select-*-object~ instead.
+
+The benefit of using =thingatpt= is that it provides a consistent interface for the functionality needed for text object selection and seeking. It does some of the necessary work itself, and evil already uses =thingatpt= for most non-pair text objects (e.g. words). That means that this section is relevant even if you don't use this package. When a thing is implemented correctly, all the information targets needs for seeking and collecting all visible locations text objects is available. Targets can then be used to create text objects for a thing with a single line:
+#+begin_src emacs-lisp
+(targets-define-to to-name 'thing-name nil object)
+;; or for text objects with the concept of "inner" vs. "outer"
+(targets-define-to to-name 'inner-thing-name 'outer-thing-name object)
+#+end_src
+
+*** What is a Thing?
+Implementing a thing requires implementing 1 to 5 functions:
+- =forward-op= (required)
+  - with a positive count, move to the nth next thing end
+  - with a negative count, move to the nth previous thing beginning
+  - don't move the point if no (more) things
+- =beginning-op= - move to the beginning of the current thing or do nothing if no thing at point
+- =end-op= - move to the end of the current thing or do nothing if no thing at point
+- =bounds-of-thing-at-point= - return the bounds (as a cons of the form =(beg . end)=) of the current thing or nil if no thing at point
+- =thing-at-point= (usually unnecessary; unnecessary for text objects) - return the text corresponding to the current thing or nil if no thing at point
+
+The return values for the movement functions don't matter. Evil seems to expect =forward-op= to return 0 on success, but this is not consistently the case for the builtin things. Targets will check whether the point has moved when necessary instead of relying on return values.
+
+=thingatpt= uses symbol properties to store/obtain these functions:
+#+begin_src emacs-lisp
+(put 'thing-name '<op> #'thing-name-<op>)
+
+;; specific example
+(put 'my-sentence 'forward-op #'my-sentence-forward)
+
+;; for 'forward-op specifically, `forward-thing' will alternatively call
+;; `forward-<thing-name>' if it exists
+(defun forward-my-sentence ...)
+#+end_src
+
+=thingatpt= in turn uses these functions to provide the following:
+- ~forward-thing~
+  - with a positive count, move to the nth next thing end
+  - with a negative count, move to the nth previous thing beginning
+  - no guarunteed return value (may return nil on success)
+- ~beginning-of-thing~
+  - move to the beginning of the current thing
+  - returns the beginning position on success; errors on failure (can use ~ignore-errors~ to get nil instead)
+- ~end-of-thing~
+  - move to the end of the current thing
+  - returns the end position on success; errors on failure
+- ~bounds-of-thing-at-point~ - return the bounds of the current thing or errors if no thing at point
+- ~thing-at-point~ - return the text corresponding to the current thing or nil if no thing at point
+
+=forward-op= is the only function required for the previously listed functionality to work. Without a =beginning-op= and =end-op=, it should support both a positive and negative count. Note that there is no =backward-op=; =forward-op= is used for backward movement as well. With a positive count, it should move to the next thing end (which can be the end of the current thing or the end of the next thing if the point is already at the end of the current thing) that number of times. With negative count, it should move to the previous thing beginning (which can be the beginning of the current or previous thing) that number of times.
+
+When =beginning-op= and =end-op= exist, =thingatpt= will use them instead of =forward-op= to move to the beginning and end of the current thing in order to get its bounds. Alternatively, if =bounds-of-thing-at-point= exists, it will be used directly to obtain the thing bounds. Note that ~beginning-of-thing~ and ~end-of-thing~ always call ~bounds-of-thing-at-point~ to get and then move to a thing's beginning or end, so you do not need to explicitly define =beginning-op= or =end-op= if you've already implemented/defined =bounds-of-thing-at-point=.
+
+=thing-at-point= returns a string corresponding to the current thing. It is generally not necessary to manually implement this function for any specific thing as =thingatpt= can just use the thing bounds to get the corresponding buffer string. This functionality is also not needed for text objects.
+
+**** More Details on =forward-op=
+This section isn't strictly necessary to understand how to write a =forward-op= function, but it may make it more clear how =thing-at-point= uses =forward-op= to obtain the bounds of a thing.
+
+To summarize how =thingatpt= finds the bounds of the current thing using only =forward-op=, it will first call ~(forward-thing 1)~ and then ~(forward-thing -1)~ to attempt to find the beginning of the current thing. After that, it will call ~(forward-thing 1)~ again to get the end. If that method fails, it will then try ~(forward-thing -1)~ followed by ~(forward-thing 1)~ to get the end (and then ~(forward-thing -1)~ again to get the beginning). This procedure may not immediately make sense, so to briefly illustrate why this method is necessary, consider the following examples.
+
+In the following case, ~(forward-thing sentence 1)~ will correctly go to the end of the sentence, and ~(forward-thing 'sentence -1)~ will correctly go to the beginning of the current sentence:
+#+begin_src emacs-lisp
+In sente|nce middle.
+#+end_src
+
+However, if the point is already at the sentence end, for example, ~(forward-thing 'sentence 1)~ will move to the end of the /next/ sentence:
+#+begin_src emacs-lisp
+At sentence end.| Next sentence. Next sentence.
+;; after (forward-thing 'sentence 1)
+At sentence end. Next sentence.| Next sentence.
+#+end_src
+
+=thingatpt= can detect this failure by then running ~(forard-thing 'sentence -1)~:
+#+begin_src emacs-lisp
+At sentence end. |Next sentence. Next sentence.
+;; point is after original position: failure
+#+end_src
+
+If the original ~(forward-thing 'sentence 1)~ had moved to the end of the /current/ sentence, ~(forward-thing 'sentence -1)~ would have moved the point to the beginning of the current sentence, which has to either be before original position or the original position itself. Since the point is after the original position, we know this method failed and moved to the next sentence instead. However, =thingatpt= can then use ~(forward-thing 'sentence -1)~ instead to reliably move to the beginning of the current sentence. There are extra checks to handle some edge cases (e.g. the second method actually calls ~(forward-thing -1)~, ~(forward-thing 1)~, and then ~(forward-thing -1)~), but these are the basic steps used to get the bounds of a thing; if you want to learn more, I'd recommend looking at ~bounds-of-thing-at-point~ directly as it is only around 50 LOC.
+
+*** Method for Implementing Text Objects Using Things
+You can use whatever method you want, but this is my preferred way of creating new text objects. The basic process I use is as follows:
+- Implement =bounds-of-thing-at-point= or =beginning-op= and =end-op= (used to select the current text object)
+- Implement evil motions (optional)
+- Implement =forward-op= (used for seeking and text object location collection) using evil motions
+
+I prefer to implement =beginning-op= and =end-op= independently from =forward-op= as they can potentially be useful when implementing evil motions and =forward-op=. If there is not already a function to confirm that there is a thing at the point (e.g. ~syntax-ppss~ can be used for strings/comments), you can use ~bounds-of-thing-at-point~ once you've implemented it. The main thing to remember is to properly handle edge cases (stay at the current thing when at its end or beginning and don't move the point if there is no thing at point).
+
+It's not necessary to implement evil motions, but it can be done without much extra work. You can implement =forward-op= without motions and then create motions from the thing using, for example, ~evil-forward-beginning~, ~evil-forward-end~, ~evil-backward-beginning~, and ~evil-backward-end~ (this is how evil defines a few motions; see ~evil-forward-section-begin~ for an example). These functions make certain assumptions that aren't necessarily always true, and I generally prefer to just implement all motions manually if it isn't too much extra work.
+
+Here's an example for how you might go about implementing a forward begin motion without the thing being fully implemented (i.e. no =forward-op=). This example tries to describe how to handle common edge cases, but it is not all-encompassing.
+#+begin_src emacs-lisp
+(evil-define-motion my-forward-thing-begin (count)
+  "Go to the next thing beginning COUNT times."
+  ;; if should add to the jump list
+  ;; :jump t
+  ;; you may also want to set :type; for example, if the motion should act
+  ;; linewise when used with an operator:
+  ;; :type line
+  (or count (setq count 1))
+  (if (< count 0)
+      ;; implement the backward version as a separate motion
+      (my-backward-thing-begin (- count))
+    (cl-dotimes (i count)
+      ;; 1. save the current position in case of failure
+      (let ((orig-pos (point))
+            ;; 1.1 if you are using something like `re-search-forward' and need
+            ;; case-sensitive search, set `case-fold-search' to nil
+            case-fold-search
+            ;; for recording a succesful search
+            successp)
+        ;; 2. move to the end of the current thing if searching for the next
+        ;; thing requires it (e.g. if you are implementing a string thing by
+        ;; searching for string delimiters, you'll want to skip past the end of
+        ;; a current string, so the search doesn't jump to the closing string
+        ;; delimiter)
+        (end-of-thing 'thing-name)
+        ;; 3. find the next thing if possible
+        (while (and
+                ;; 3.1 `re-search-forward' or some dumb search not guaranteed
+                ;; to jump to a real thing may be useful if there is not
+                ;; already a reliable way to jump to the next thing; this should
+                ;; fail if there are no more things after the current one
+                (re-search-forward "regexp" nil t)
+                ;; 3.2 continue searching forward while the search succeeds but
+                ;; doesn't find a real thing; quit searching when on a real
+                ;; thing; if there is an existing function that
+                ;; can test whether there is actually a thing at the point,
+                ;; prefer it to using `bounds-of-thing-at-point' (e.g. it may
+                ;; have been used when implementing `bounds-of-thing-at-point'
+                ;; for the thing)
+                (not (setq successp (bounds-of-thing-at-point 'thing)))))
+        ;; 4. end the current loop iteration
+        (if succesp
+            ;; when succesful, move to the beginning of the thing; you may just
+            ;; be able to do this with `match-beginning'; otherwise, you can
+            ;; potentially use `beginning-of-thing' or (goto-char (car succesp))
+            ;; if you used `bounds-of-thing-at-point' for checking in step 3
+            (goto-char (match-beginning 0))
+          ;; otherwise, return to the original position from the start of the
+          ;; loop and exit the loop since there are no more things after the
+          ;; point
+          (goto-char orig-pos)
+          (cl-return))))))
+#+end_src
+
+The other three motions will be fairly similar. The main differences are with regards to order and direction. For example, for a forward end motion, remember that if you aren't already at the end of the current thing, the first iteration should move to the end of the current thing instead of to the end of the next thing.
+
+Once you've implemented forward end and backward beginning functions, you can just implement =forward-op= on top of them:
+#+begin_src emacs-lisp
+(defun my-forward-thing (count)
+  (if (< count 0)
+      (my-forward-thing-end (- count))
+    (my-backward-thing-begin count)))
+(put 'thing-name 'forward-op #'my-forward-thing)
+#+end_src
+
+You can then create basic text objects without using targets like this:
+#+begin_src emacs-lisp
+(evil-define-text-object my-inner-thing (count &optional beg end type)
+  (evil-select-inner-object 'thing-name beg end type count))
+
+(evil-define-text-object my-a-thing (count &optional beg end type)
+  (evil-select-an-object 'thing-name beg end type count))
+#+end_src
+
 * Specific Provided Text Objects
 ** ~targets-last-text-object~
 This command will run the last text object used in the current state (operator or visual). Note that this only works for text objects defined with targets.el. For operator state, it may be useful if you want to use a different operator with the previous text object (otherwise you could just use ~evil-repeat~). It is probably more useful for visual state where it can be used as a shorter key to expand the region. The last text object for visual state resets in between visual selections. You can set =targets-default-text-object= to a default text object to use the first time ~targets-last-text-object~ is run after visual state is entered.
