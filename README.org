@@ -154,12 +154,13 @@ Implementing a thing requires implementing 1 to 5 functions:
   - with a positive count, move to the nth next thing end
   - with a negative count, move to the nth previous thing beginning
   - don't move the point if no (more) things
+  - (for evil functionality) return 0 on success and another number (e.g. 1) on failure
 - =beginning-op= - move to the beginning of the current thing or do nothing if no thing at point
 - =end-op= - move to the end of the current thing or do nothing if no thing at point
 - =bounds-of-thing-at-point= - return the bounds (as a cons of the form =(beg . end)=) of the current thing or nil if no thing at point
 - =thing-at-point= (usually unnecessary; unnecessary for text objects) - return the text corresponding to the current thing or nil if no thing at point
 
-The return values for the movement functions don't matter. Evil seems to expect =forward-op= to return 0 on success, but this is not consistently the case for the builtin things. Targets will check whether the point has moved when necessary instead of relying on return values.
+=thingatpt= does not specify what the return value of =forward-op= should be, but evil requires it to return =0= on success (or =1=, for example, on failure like ~forward-line~ does). Not all things do this, so you may need to alter the =forward-op= for some things to meet this requirement (or growing a selection will break, for example).
 
 =thingatpt= uses symbol properties to store/obtain these functions:
 #+begin_src emacs-lisp
@@ -274,8 +275,9 @@ Here's an example for how you might go about implementing a forward begin motion
         (if succesp
             ;; when succesful, move to the beginning of the thing; you may just
             ;; be able to do this with `match-beginning'; otherwise, you can
-            ;; potentially use `beginning-of-thing' or (goto-char (car succesp))
-            ;; if you used `bounds-of-thing-at-point' for checking in step 3
+            ;; potentially use `beginning-of-thing' or (goto-char (car
+            ;; successp)) if you used `bounds-of-thing-at-point' for checking in
+            ;; step 3
             (goto-char (match-beginning 0))
           ;; otherwise, return to the original position from the start of the
           ;; loop and exit the loop since there are no more things after the
@@ -289,9 +291,15 @@ The other three motions will be fairly similar. The main differences are with re
 Once you've implemented forward end and backward beginning functions, you can just implement =forward-op= on top of them:
 #+begin_src emacs-lisp
 (defun my-forward-thing (count)
-  (if (< count 0)
-      (my-forward-thing-end (- count))
-    (my-backward-thing-begin count)))
+  (let ((orig-pos (point)))
+    (if (< count 0)
+        (my-backward-thing-begin (- count))
+      (my-forward-thing-end count))
+    (if (= (point) orig-pos)
+        1
+      ;; return 0 on success (evil has `zerop' checks; e.g. see
+      ;; `evil-forward-not-thing')
+      0)))
 (put 'thing-name 'forward-op #'my-forward-thing)
 #+end_src
 
