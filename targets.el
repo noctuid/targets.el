@@ -314,6 +314,20 @@ successful, return the matched position (otherwise nil)."
 (defvar targets--reset-position nil)
 (defvar targets--reset-window nil)
 
+(defvar targets-no-reset-operators nil
+  "A list corresponding to evil operators that should move the point.
+Targets will not reset the point after next, last, or remote text object when
+the operator is in this list (or in `evil-change-commands').")
+
+(defun targets--reset-after ()
+  "Save the current position and reset to it after the current command.
+Do not reset if the current command is in `evil-change-commands'."
+  (unless (or (memq evil-this-operator evil-change-commands)
+              (memq evil-this-operator targets-no-reset-operators))
+    (point-to-register 'targets--reset-position)
+    (setq targets--reset-position t
+          targets--reset-window (get-buffer-window))))
+
 (defun targets--reset-position ()
   "Called after next and last text objects to restore the cursor position.
 The point is not restored if there is a selection."
@@ -714,8 +728,7 @@ a list of hooks."
                    `(targets--define-text-object ,(cl-first info)
                         ,(concat "Select" (cl-third info) name ".")
                         ,let
-                      (point-to-register 'targets--reset-position)
-                      (setq targets--reset-position t)
+                      (targets--reset-after)
                       (when (targets-seek-forward ,open ,close ',to-type count)
                         ;; purposely don't give visual info since seeking
                         (setq beg nil end nil)
@@ -733,8 +746,7 @@ a list of hooks."
             `(targets--define-text-object ,(cl-first info)
                  ,(concat "Select" (cl-third info) name ".")
                  ,let
-               (point-to-register 'targets--reset-position)
-               (setq targets--reset-position t)
+               (targets--reset-after)
                (when (targets-seek-backward ,open ,close ',to-type count)
                  (setq beg nil end nil count 1)
                  ,(cl-second info))))
@@ -750,8 +762,7 @@ a list of hooks."
                  ,let
                (require 'avy)
                (targets--set-last-text-object #',(cl-first info))
-               (setq targets--reset-position t)
-               (setq targets--reset-window (get-buffer-window))
+               (targets--reset-after)
                ;; fix repeat info
                (when (evil-repeat-recording-p)
                  (setq

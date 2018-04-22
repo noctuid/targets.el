@@ -382,6 +382,9 @@ The =:let= keyword can be used to locally bind certain variables for all the tex
          ((targets-bound #'my-smaller-bound)))))
 #+end_src
 
+** Prevent Position Resetting
+Some operators should move the point even when used with next, last, or remote text objects (e.g. ~evil-change~). To prevent position resetting with these operator, you can customize =evil-change-commands= (if your custom change operator is not already in it) or =targets-no-reset-operators=.
+
 ** Avy Settings
 For remote text objects, the user can change =targets-avy-style=, =targets-avy-keys=, =targets-avy-background=, =targets-avy-all-windows=, and =targets-avy-all-windows-alt=. All will override the corresponding avy settings when set by the user. By default, they are not bound, and the values of the corresponding avy settings are used. Note that you can also use =avy-keys-alist= and =avy-styles-alist= for customizing the behavior of specific text objects.
 
