@@ -180,10 +180,12 @@ variable."
   "Same as `max' but remove nils from NUMBERS."
   (apply #'max (remove nil numbers)))
 
-(defun targets-seek-forward (open _ type &optional count bound)
-  "Seek forward to the text object specified by OPEN and TYPE COUNT times.
-If BOUND is non-nil, do not seek beyond BOUND. If successful, this function will
-move the point to beginning of the match and return its position."
+(defun targets-seek-forward (open close type &optional count bound)
+  "Seek forward to text object specified by OPEN, CLOSE and TYPE COUNT times.
+This function will seek to the next text object if there is an existing text
+object at the point. If BOUND is non-nil, do not seek beyond BOUND. If
+successful, this function will move the point to beginning of the match and
+return its position."
   (or count (setq count 1))
   (setq bound (targets--min bound (funcall targets-bound) (point-max)))
   (let ((orig-pos (point))
@@ -207,26 +209,39 @@ move the point to beginning of the match and return its position."
                (goto-char orig-pos)
              (beginning-of-thing 'evil-quote)))))
       (object
-       (let ((thing open))
+       (let* ((thing
+               ;; seeking should use the "outer" thing if it exist in order to
+               ;; skip past the entirety of the thing with `end-of-thing'
+               (or close open))
+              (current-bounds (bounds-of-thing-at-point thing)))
          ;; additional property for things specifically for targets.el
          ;; if the thing is nestable (e.g. lists), going to the end would skip
          ;; past any nested things
          (unless (get thing 'nestable)
            (ignore-errors (end-of-thing thing)))
          (let ((pos (point)))
-           (forward-thing thing count)
-           (when (or (= (point) pos)
-                     (> (point) bound)
-                     ;; this will return non-nil (the pos) on success
-                     (not (ignore-errors (beginning-of-thing thing))))
-             (goto-char orig-pos))))))
+           (cond ((and current-bounds
+                       ;; don't move forward if already on new thing (necessary
+                       ;; to handle one character things like - for evil words)
+                       (not (equal current-bounds
+                                   (bounds-of-thing-at-point thing)))))
+                 (t
+                  (forward-thing thing count)
+                  (when (or (= (point) pos)
+                            (> (point) bound)
+                            ;; may have moved onto a one character thing
+                            (backward-char)
+                            ;; this will return non-nil (the pos) on success
+                            (not (ignore-errors (beginning-of-thing thing))))
+                    (goto-char orig-pos))))))))
     (unless (= (point) orig-pos)
       (point))))
 
 (defun targets-seek-backward (open close type &optional count bound)
-  "Seek backward to the text object specified by OPEN, CLOSE, and TYPE COUNT
-times. If BOUND is non-nil, do not seek beyond BOUND. If successful, return the
-matched position (otherwise nil)."
+  "Seek backward to text object specified by OPEN, CLOSE, and TYPE COUNT times.
+This function will seek to the previous text object if there is an existing text
+object at the point. If BOUND is non-nil, do not seek beyond BOUND. If
+successful, return the matched position (otherwise nil)."
   (setq count (or count 1))
   (setq bound (targets--max bound (funcall targets-bound t) (point-min)))
   (let ((orig-pos (point))
@@ -279,15 +294,20 @@ matched position (otherwise nil)."
                    (< (point) bound))
            (goto-char orig-pos))))
       (object
-       (let ((thing open))
+       (let* ((thing (or close open))
+              (current-bounds (bounds-of-thing-at-point thing)))
          (unless (get thing 'nestable)
            (ignore-errors (beginning-of-thing thing)))
          (let ((pos (point)))
-           (forward-thing thing (- count))
-           (when (or (= (point) pos)
-                     (< (point) bound)
-                     (not (ignore-errors (beginning-of-thing thing))))
-             (goto-char orig-pos))))))
+           (cond ((and current-bounds
+                       (not (equal current-bounds
+                                   (bounds-of-thing-at-point thing)))))
+                 (t
+                  (forward-thing thing (- count))
+                  (when (or (= (point) pos)
+                            (< (point) bound)
+                            (not (ignore-errors (beginning-of-thing thing))))
+                    (goto-char orig-pos))))))))
     (unless (= (point) orig-pos)
       (point))))
 
@@ -314,7 +334,7 @@ The point is not restored if there is a selection."
   (defun targets--collect-text-objects (open type select-func)
     "Collect all locations of visible text objects based on OPEN and TYPE.
 SELECT-FUNC is used to determine if there is a text object at the beginning of
-the visible regions of the window as `targets-seek-foraward' will seek past the
+the visible regions of the window as `targets-seek-forward' will seek past the
 current text object."
     (let ((open (if (listp open)
                     open
@@ -696,10 +716,10 @@ a list of hooks."
                         ,let
                       (point-to-register 'targets--reset-position)
                       (setq targets--reset-position t)
-                      (when (targets-seek-forward ,open nil ',to-type count)
+                      (when (targets-seek-forward ,open ,close ',to-type count)
                         ;; purposely don't give visual info since seeking
                         (setq beg nil end nil)
-                        ;; count should only be used for seeking
+                        ;; count should only be used for initial seeking
                         (setq count 1)
                         ,(cl-second info))))
                  (list (list next-inner-name select-inner " the next inner ")

@@ -446,7 +446,24 @@ considered as part of the region."
       ;; (expect (targets-with "|one two three" "d2inw")
       ;;         :to-equal "|one two ")
       (expect (targets-with "|one two three" "v2inw")
-              :to-equal "one two ~thre|e")))
+              :to-equal "one two ~thre|e"))
+    (it "should correctly handle one character words"
+      ;; TODO position resetting
+      (expect (replace-regexp-in-string
+               "|"
+               ""
+               (targets-with "|one two-three" "dinw"))
+              :to-equal "one -three")
+      (expect (replace-regexp-in-string
+               "|"
+               ""
+               (targets-with "|one-two-three" "dinw"))
+              :to-equal "onetwo-three")
+      (expect (replace-regexp-in-string
+               "|"
+               ""
+               (targets-with "one|-two-three" "dinw"))
+              :to-equal "one--three")))
   (describe "targets-inner-last-word"
     (xit "should delete the last word excluding whitespace"
       (expect (targets-with "one two |three" "dilw")
@@ -458,7 +475,24 @@ considered as part of the region."
       ;; (expect (targets-with "one two |three" "d2ilw")
       ;;         :to-equal " two |three")
       (expect (targets-with "one two |three" "v2ilw")
-              :to-equal "~on|e two three")))
+              :to-equal "~on|e two three"))
+    (it "should correctly handle one character words"
+      ;; TODO position resetting
+      (expect (replace-regexp-in-string
+               "|"
+               ""
+               (targets-with "one-two |three" "dilw"))
+              :to-equal "one- three")
+      (expect (replace-regexp-in-string
+               "|"
+               ""
+               (targets-with "one-|two" "dilw"))
+              :to-equal "onetwo")
+      (expect (replace-regexp-in-string
+               "|"
+               ""
+               (targets-with "one-two|-three" "dilw"))
+              :to-equal "one--three")))
   (describe "targets-inner-paragraph"
     (it "should act linewise on a paragraph excluding blank lines"
       (expect (targets-with "|A\nParagraph\n\n" "dip")
