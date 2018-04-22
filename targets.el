@@ -154,10 +154,13 @@ should behave."
   :type 'function)
 
 (defun targets-push-jump-p (old-pos new-pos)
-  "Whether or not to push to the evil jump list after a successful seek.
-This default function will push to the jump list when OLD-POS and NEW-POS are
-not on the same line. A custom function can be used by changing the
-`targets-push-jump-p' variable."
+  "Whether OLD-POS is far enough away from NEW-POS to push it to the jump list.
+This function is called after an evil operator has finished (and after any
+possible point resetting). When this function returns non-nil (and there is no
+visual selection), targets will push the old position to the jump list. This
+default function will return non-nil when the positions are not on the same
+line. A custom function can be used by changing the `targets-push-jump-p'
+variable."
   (not (= (line-number-at-pos old-pos) (line-number-at-pos new-pos))))
 
 (defun targets-bound (&optional backwards)
@@ -343,6 +346,24 @@ The point is not restored if there is a selection."
         (select-window window))
       (setq targets--reset-window nil))))
 
+(defvar targets--push-jump nil)
+
+(defun targets--update-jump-list ()
+  "Called after any targets text object to update the evil jump list.
+The old position is not added to the jump list if there is a selection or if the
+new point is not far enough away from the original point as determined by
+`targets-push-jump-p'."
+  (when (and targets--push-jump
+             (funcall targets-push-jump-p targets--push-jump (point)))
+    ;; `evil-set-jump' already checks if region is active
+    (evil-set-jump targets--push-jump))
+  (setq targets--push-jump nil))
+
+(defun targets--post-command ()
+  "See `targets--reset-position' and `targets--update-jump-list'."
+  (targets--reset-position)
+  (targets--update-jump-list))
+
 ;;; * Avy-related Functions
 (with-eval-after-load 'avy
   (defun targets--collect-text-objects (open close type select-func)
@@ -519,14 +540,11 @@ objects."
     (to-type select-type linewise open close beg end type count)
   "Return a range corresponding to the matched text object.
 If unsuccessful, seek using the functions in `targets-seek-functions' to attempt
-to find a matching text object. Push the initial position when seeking if
-`targets-push-jump' run with the inital and final positions returns non-nil. See
-`targets--select-to' for more details."
+to find a matching text object. See `targets--select-to' for more details."
   (save-excursion
     (let ((seek-functions targets-seek-functions)
           (orig-pos (point))
-          range
-          push-jump-p)
+          range)
       (while (and (not
                    (setq range
                          (ignore-errors
@@ -536,11 +554,8 @@ to find a matching text object. Push the initial position when seeking if
                   seek-functions)
         (goto-char orig-pos)
         (funcall (pop seek-functions) open close to-type)
-        (setq push-jump-p (targets-push-jump-p orig-pos (point)))
         ;; discard visual info if seeking
         (setq beg nil end nil))
-      (when (and range push-jump-p)
-        (evil-set-jump orig-pos))
       range)))
 
 (defun targets--define-keys (hooks prefix infix keys def)
@@ -619,6 +634,7 @@ in both, the latter will take precedence."
   `(evil-define-text-object ,name (count &optional beg end type)
      ,docstring
      (targets--set-last-text-object #',name)
+     (setq targets--push-jump (point-marker))
      (targets--let ,name ,letbinds
        ,body)))
 
@@ -1142,7 +1158,7 @@ there is no MORE-KEYS. KEYS must always be manually specified."
 (defun targets--setup (inside-key around-key next-key last-key remote-key)
   "Set up basic configuration for targets.el.
 See `targets-setup' for more details."
-  (add-hook 'post-command-hook #'targets--reset-position)
+  (add-hook 'post-command-hook #'targets--post-command)
   (add-hook 'evil-visual-state-exit-hook
             #'targets--clear-last-visual-text-object)
   ;; bind inside and around keymaps
