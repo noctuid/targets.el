@@ -345,7 +345,7 @@ The point is not restored if there is a selection."
 
 ;;; * Avy-related Functions
 (with-eval-after-load 'avy
-  (defun targets--collect-text-objects (open type select-func)
+  (defun targets--collect-text-objects (open close type select-func)
     "Collect all locations of visible text objects based on OPEN and TYPE.
 SELECT-FUNC is used to determine if there is a text object at the beginning of
 the visible regions of the window as `targets-seek-forward' will seek past the
@@ -353,6 +353,9 @@ current text object."
     (let ((open (if (listp open)
                     open
                   (list open)))
+          (close (if (listp close)
+                     close
+                   (list close)))
           (type (if (listp type)
                     type
                   (list type)))
@@ -374,8 +377,11 @@ current text object."
                 (push (point) to-positions))
               (dotimes (i (length open))
                 (while (setq to-pos (targets-seek-forward
-                                     (nth i open) nil (nth i type)
-                                     1 (cdr bounds)))
+                                     (nth i open)
+                                     (nth i close)
+                                     (nth i type)
+                                     1
+                                     (cdr bounds)))
                   (push to-pos to-positions)
                   (goto-char to-pos))
                 (goto-char (car bounds)))
@@ -390,7 +396,7 @@ current text object."
     (point-to-register 'targets--reset-position)
     (goto-char pos))
 
-  (defun targets--avy-seek (command open _ type select-func)
+  (defun targets--avy-seek (command open close type select-func)
     "Seek to a text object specified by OPEN and TYPE using avy for selection.
 COMMAND will be used as the name given to `avy-with', so that `avy-styles-alist'
 and `avy-keys-alist' can be customize for COMMAND. SELECT-FUNC is used to
@@ -417,7 +423,7 @@ it starts at or after the beginning of the window."
           )
       (avy-with command
         (let ((avy-action #'targets--save-point-and-jump)
-              (tos (targets--collect-text-objects open type select-func)))
+              (tos (targets--collect-text-objects open close type select-func)))
           (if (not tos)
               (message "No text objects found.")
             (avy--process tos (avy--style-fn avy-style))))))))
