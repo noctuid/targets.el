@@ -415,7 +415,15 @@ considered as part of the region."
       (expect (targets-with "|one two three" "d3iw")
               :to-equal "| three")
       (expect (targets-with "|one two three" "v3iw")
-              :to-equal "~one tw|o three")))
+              :to-equal "~one tw|o three"))
+    (it "should optionally seek instead of extending the selection"
+      (expect (targets-with "~one| two " "aw")
+              :to-equal "~one two| ")
+      (put 'evil-word 'targets-no-extend t)
+      ;; should now seek forward
+      (expect (targets-with "~one| two " "aw")
+              :to-equal "one ~two| ")
+      (put 'evil-word 'targets-no-extend nil)))
   (describe "targets-a-word"
     (it "should delete a word and trailing or leading whitespace"
       (expect (targets-with "one |two three" "daw")
@@ -434,7 +442,19 @@ considered as part of the region."
       (expect (targets-with "|one two three" "d2aw")
               :to-equal "|three")
       (expect (targets-with "|one two three" "v2aw")
-              :to-equal "~one two| three")))
+              :to-equal "~one two| three"))
+    (it "should optionally seek instead of extending the selection"
+      (expect (targets-with "one| two" "viw")
+              :to-equal "one~| two")
+      (expect (targets-with "~on|e two" "iw")
+              :to-equal "~one| two")
+      (put 'evil-word 'targets-no-extend t)
+      ;; should now seek forward
+      (expect (targets-with "one| two" "viw")
+              :to-equal "one ~tw|o")
+      (expect (targets-with "~on|e two" "iw")
+              :to-equal "one ~tw|o")
+      (put 'evil-word 'targets-no-extend nil)))
   (describe "targets-inner-next-word"
     (xit "should delete the next word excluding whitespace"
       (expect (targets-with "|one two three" "dinw")

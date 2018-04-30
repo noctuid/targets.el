@@ -32,8 +32,7 @@ A quote consists of an opening and closing delimiter that are the same. The deli
 The main difference between a separator and a quote is that there do not need to be a balanced number of separators. A separator delimiter can be a regexp. =a= also behaves slightly differently. It includes the first separator but not the second, so that after a deletion, a separator will still be left in between the text on either side.
 
 ** Objects/Things
-These are text objects that use =thingatpt.el= such as =evil-word= and =evil-sentence=. Note that =i= and =a= will act as =I= and =A= for most text objects by default (e.g. there are no delimiters to consider for an =evil-word=). =I= and =A= text objects will still be created because it is still possible and sometimes useful to have different behavior for inner vs. outer things besides how they handle whitespace (e.g. you could potentially create an inner sentence text object that excludes quotations and org markup; see [[https://github.com/noctuid/emacs-sentence-navigation][sentence-navigation.el]]).
-. [[#targets-define-to][~targets-define-to~]] allows specifying different things to use for inner vs. outea text objects to handle this case.
+These are text objects that use =thingatpt.el= such as =evil-word= and =evil-sentence=. Note that =i= and =a= will act as =I= and =A= for most text objects by default (e.g. there are no delimiters to consider for an =evil-word=). =I= and =A= text objects will still be created because it is still possible and sometimes useful to have different behavior for inner vs. outer things besides how they handle whitespace (e.g. you could potentially create an inner sentence text object that excludes quotations and org markup like [[https://github.com/noctuid/emacs-sentence-navigation][sentence-navigation.el]]). You can [[#custom-inner-vs-outer-behavior][specify a shrink function]] to use for the inner text object to achieve this behavior.
 
 ** Miscellaneous/Simple
 Since this package is about adding extra text objects, it also adds a few other specific text objects that evil does not have by default:
@@ -78,16 +77,11 @@ Here is a basic example with all the required arguments:
 #+end_src
 This will result in the creation of 16 text objects (=inner=, =a=, =inside=, =around=, and the next, last, and remote versions of these).
 
-The first argument is a symbol that will be used when naming the new text objects. The next two arguments specify the delimiters for the text objects. The fourth arguments specifies the type of the text objects. The names for the types are =pair=, =quote=, =separator=, and =object=. Only pairs require the closing delimiter. The opening delimiter should always be a string except for an =object=, for which it should be the symbol corresponding to the thing. For objects, if you specify two things, the first will be used for inner text objects and the second for outer text objects.
+The first argument is a symbol that will be used when naming the new text objects. The next two arguments specify the delimiters for the text objects. The fourth arguments specifies the type of the text objects. The names for the types are =pair=, =quote=, =separator=, and =object=. Only pairs require the closing delimiter. The opening delimiter should always be a string except for an =object=, for which it should be the symbol corresponding to the thing.
 #+begin_src emacs-lisp
 (targets-define-to double-quote "\"" nil quote)
 (targets-define-to comma "," nil separator)
 (targets-define-to word 'evil-word nil object)
-;; to use different things for inner vs. outer text-objects
-(targets-define-to sentence
-                   'sentence-nav-evil-inner-sentence
-                   'sentence-nav-evil-a-sentence
-                   object)
 #+end_src
 
 ~targets-define-to~ accepts additional keyword arguments. Specifying =bind= as non-nil will also bind the created text objects. By default, text objects are bound to the opening delimiter (and closing delimiter for pairs, e.g =i(=, =i)=, =a(=, =a)=, etc.). If the delimiters are regexps or the type is =object=, =:keys= must be explicitly specified. =:keys= completely replaces the default keys, and =:more-keys= adds to them. Both can be either a single key or a list of keys. =:inner-key=, =:a-key=, =:inside-key=, =:around-key=, =:next-key=, =:last-key=, and =:remote-key= can also be specified to change the intermediate keys used from their defaults. If any of them is set to =nil=, the corresponding text objects will not be bound.
@@ -310,6 +304,63 @@ You can then create basic text objects without using targets like this:
 
 (evil-define-text-object my-a-thing (count &optional beg end type)
   (evil-select-an-object 'thing-name beg end type count))
+#+end_src
+
+*** Custom Inner vs. Outer Behavior
+By default, the inner and outer versions of =object= type text objects are equivalent to the inside and around versions respectively (i.e. the inner version will select the thing, and the outer version will also select spaces after or before it). If you want to create a text object for a thing where it makes sense to exclude, for example, some type of delimiter for the inner version, you can create a "shrink" function to achieve this. It should take an evil range (=(BEG END ...)=) and return the new evil range after shrinking the region.
+
+For example, if you wanted to create a thing version of the paren object or any text object where the delimiters are single characters, you could define a shrink function like this:
+#+begin_src emacs-lisp
+(defun targets--shrink-inner (range)
+  "Shrink RANGE by 1 character on each side."
+  (cl-incf (car bounds))
+  (cl-decf (cadr bounds))
+  bounds)
+(put 'my-thing 'targets-shrink-inner #'targets--shrink-inner)
+#+end_src
+
+Since this is common for inner text objects, you can just specify =t= to use targets' default shrink function:
+#+begin_src emacs-lisp
+;; use default shrink function
+(put 'my-thing 'targets-shrink-inner t)
+#+end_src
+
+Note that you don't need to check if the range is non-nil or if the new range is valid (i.e. the beginning is not equal to or after the end); targets already handles these cases.
+
+This is the equivalent without using targets (~evil-select-inner-object~ should be used for both):
+#+begin_src emacs-lisp
+(evil-define-text-object my-inner-thing (count &optional beg end type)
+  (let* ((range
+          (evil-select-inner-object 'my-thing beg end type count))
+         (new-range (when range
+                      (my-shrink-thing range))))
+    (if (and new-range
+             (< (car new-range) (cadr new-range)))
+        new-range
+      range)))
+
+(evil-define-text-object my-a-thing (count &optional beg end type)
+  (evil-select-inner-object 'my-thing beg end type count))
+#+end_src
+
+*** Preventing Selection of Non-things and Region Expansion
+For some things (particularly non-nestable things), extending an active region/visual selection does not make sense. For example, if you were to write a string text objects using =thingatpt=, region extension would act like this:
+#+begin_src emacs-lisp
+(~"string|" (foo (bar "string")))
+;; press the key for "a string" again
+(~"string" (foo (bar| "string")))
+#+end_src
+
+Furthermore, if you were to attempt to delete a string in between strings, evil would delete the region in between strings instead of seeking. As it is unlikely for this behavior to be useful, you can prevent it by setting the =targets-no-extend= symbol property:
+#+begin_src emacs-lisp
+(put 'my-thing 'targets-no-extend t)
+#+end_src
+
+Now targets will seek forward in cases where there is no thing at the point or the same object is already selected. For example:
+#+begin_src emacs-lisp
+(~"string|" (foo (bar "string")))
+;; press the key for "a string" again
+("string" (foo (bar ~"string|")))
 #+end_src
 
 * Specific Provided Text Objects

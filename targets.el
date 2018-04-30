@@ -212,10 +212,7 @@ return its position."
                (goto-char orig-pos)
              (beginning-of-thing 'evil-quote)))))
       (object
-       (let* ((thing
-               ;; seeking should use the "outer" thing if it exist in order to
-               ;; skip past the entirety of the thing with `end-of-thing'
-               (or close open))
+       (let* ((thing open)
               (current-bounds (bounds-of-thing-at-point thing)))
          ;; additional property for things specifically for targets.el
          ;; if the thing is nestable (e.g. lists), going to the end would skip
@@ -297,7 +294,7 @@ successful, return the matched position (otherwise nil)."
                    (< (point) bound))
            (goto-char orig-pos))))
       (object
-       (let* ((thing (or close open))
+       (let* ((thing open)
               (current-bounds (bounds-of-thing-at-point thing)))
          (unless (get thing 'nestable)
            (ignore-errors (beginning-of-thing thing)))
@@ -451,6 +448,46 @@ it starts at or after the beginning of the window."
 
 ;;; * Text Object Definers
 ;; ** Helpers
+(defun targets--shrink-inner (range)
+  "Shrink RANGE by 1 character on each side."
+  (cl-incf (car range))
+  (cl-decf (cadr range))
+  range)
+
+(defun targets--shrink-inside (range)
+  "Shrink RANGE to exclude whitespace and then newlines."
+  (goto-char (car range))
+  (skip-chars-forward " \t")
+  (skip-chars-forward "\n")
+  (setf (car range) (point))
+  (goto-char (cadr range))
+  (skip-chars-backward " \t")
+  (skip-chars-backward "\n")
+  (setf (cadr range) (point))
+  range)
+
+(defun targets--extend-around (range)
+  "Extend RANGE to include whitespace after or before it."
+  (goto-char (cadr range))
+  (skip-chars-forward " \t")
+  (cond ((= (point) (cadr range))
+         (goto-char (car range))
+         (skip-chars-backward " \t")
+         (setf (car range) (point)))
+        (t
+         (setf (cadr range) (point))))
+  range)
+
+(defun targets--alter-range (range alter-function)
+  "Alter RANGE with ALTER-FUNCTION."
+  (let ((new-range
+         (when range
+           (funcall alter-function range))))
+    (if (and new-range (< (car new-range) (cadr new-range)))
+        new-range
+      range)))
+
+;; TODO consider splitting into different function depending on type
 (defun targets--select-to (to-type select-type linewise open close beg end type
                                    count)
   "Return a range corresponding to the matched text object.
@@ -466,6 +503,15 @@ objects."
                         (quote (string-to-char open))))
            (close-char (when (and open-char (eq to-type 'pair))
                          (string-to-char close)))
+           (thing (when (eq to-type 'object)
+                    open))
+           (shrink-inner (and thing
+                              (get thing 'targets-shrink-inner)
+                              (if (functionp
+                                   (get thing 'targets-shrink-inner))
+                                  (get thing 'targets-shrink-inner)
+                                #'targets--shrink-inner)))
+           (no-extend (and thing (get thing 'targets-no-extend)))
            (inclusive (when (memq select-type '(a around))
                         t))
            (range
@@ -495,14 +541,23 @@ objects."
                        range)
                    (evil-select-quote open-char beg end type count)))
                 (object
-                 (if inclusive
-                     (if close
-                         (evil-select-inner-object close beg end type count
-                                                   linewise)
-                       (evil-select-an-object open beg end type count
-                                              linewise))
-                   (evil-select-inner-object open beg end type count
-                                             linewise)))))))
+                 (when no-extend
+                   ;; discard visual info (so can seek past)
+                   (setq beg nil end nil))
+                 ;; prevent returning range when there is no object at the point
+                 ;; TODO just write own basic selection function
+                 (cl-letf (((symbol-function
+                             'evil-bounds-of-not-thing-at-point)
+                            (if no-extend
+                                #'ignore
+                              (symbol-function
+                               'evil-bounds-of-not-thing-at-point))))
+                   (if (and inclusive
+                            (not shrink-inner))
+                       (evil-select-an-object thing beg end type count
+                                              linewise)
+                     (evil-select-inner-object thing beg end type count
+                                               linewise))))))))
       (when range
         (when (and (not inclusive)
                    (not (eq to-type 'object))
@@ -512,29 +567,36 @@ objects."
         ;; ignore range when evil seeks
         (unless (or (> (car range) (point))
                     (< (cadr range) (point)))
-          (cl-case select-type
-            ((inner a linewise)
-             range)
-            (inside
-             (goto-char (car range))
-             (skip-chars-forward " \t")
-             (setf (car range) (point))
-             (goto-char (cadr range))
-             (skip-chars-backward " \t")
-             (setf (cadr range) (point))
-             range)
-            (around
-             (when (eq to-type 'separator)
-               (setf (cadr range) (1+ (cadr range))))
-             (goto-char (cadr range))
-             (skip-chars-forward " \t")
-             (cond ((= (point) (cadr range))
-                    (goto-char (car range))
-                    (skip-chars-backward " \t")
-                    (setf (car range) (point)))
-                   (t
-                    (setf (cadr range) (point))))
-             range)))))))
+          (when (and (not inclusive)
+                     shrink-inner)
+            ;; need to shrink inner before inside for object type
+            (setq range (targets--alter-range range shrink-inner)))
+          (setq range
+                (cond ((or (and (eq select-type 'around)
+                                ;; for now around being different from a only makes
+                                ;; sense with a non-whitespace inner version of the
+                                ;; object
+                                (or (not (eq to-type 'object))
+                                    shrink-inner))
+                           (and (eq select-type 'a)
+                                (not shrink-inner)
+                                no-extend))
+                       (when (eq to-type 'separator)
+                         (setf (cadr range) (1+ (cadr range))))
+                       (targets--alter-range range #'targets--extend-around))
+                      ((eq select-type 'inside)
+                       (targets--alter-range range #'targets--shrink-inside))
+                      (t
+                       range)))
+          (if (and no-extend
+                   (region-active-p)
+                   (= (car range) (region-beginning))
+                   ;; TODO for some reason region-end is not the same as normal
+                   (= (cadr range) (1+ (region-end)))
+                   (targets-seek-forward open close to-type))
+              ;; seek if enabled
+              nil
+            range))))))
 
 (defun targets--select-to-with-seeking
     (to-type select-type linewise open close beg end type count)
