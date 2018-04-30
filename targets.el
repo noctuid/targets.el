@@ -371,7 +371,7 @@ current text object."
     (let ((open (if (listp open)
                     open
                   (list open)))
-          (close (if (listp close)
+          (close (if (and close (listp close))
                      close
                    (list close)))
           (type (if (listp type)
@@ -390,7 +390,9 @@ current text object."
               ;; as the eol of an invisible line can be visible in org buffers,
               ;; don't do this if the point is at the eol
               (when (and (not (looking-at (rx eol)))
-                         (let ((range (funcall select-func)))
+                         ;; prevent seeking
+                         (let* (targets-seek-functions
+                                (range (funcall select-func)))
                            (and range (>= (car range) (car bounds)))))
                 (push (point) to-positions))
               (dotimes (i (length open))
