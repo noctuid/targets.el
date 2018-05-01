@@ -333,15 +333,15 @@ Do not reset if the current command is in `evil-change-commands'."
 The point is not restored if there is a selection."
   (unless (region-active-p)
     (when targets--reset-position
-      (jump-to-register 'targets--reset-position)
-      (setq targets--reset-position nil))
+      (jump-to-register 'targets--reset-position))
     (when targets--reset-window
       (let* ((window targets--reset-window)
              (frame (window-frame window)))
         (unless (equal frame (selected-frame))
           (select-frame-set-input-focus frame))
-        (select-window window))
-      (setq targets--reset-window nil))))
+        (select-window window))))
+  (setq targets--reset-window nil)
+  (setq targets--reset-position nil))
 
 (defvar targets--push-jump nil)
 
