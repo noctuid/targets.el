@@ -196,7 +196,7 @@ considered as part of the region."
               :to-equal "a (~b c |d)"))
     (it "should handle immediately nested parens"
       (expect (targets-with "|a ((b c d))" "din(")
-              :to-equal "a (|)")
+              :to-equal "|a ()")
       (expect (targets-with "|a ((b c d))" "vin(")
               :to-equal "a (~(b c d|))"))
     (xit "should support a count"
@@ -417,12 +417,14 @@ considered as part of the region."
       (expect (targets-with "|one two three" "v3iw")
               :to-equal "~one tw|o three"))
     (it "should optionally seek instead of extending the selection"
-      (expect (targets-with "~one| two " "aw")
-              :to-equal "~one two| ")
+      (expect (targets-with "one| two" "viw")
+              :to-equal "one~| two")
+      (expect (targets-with "~on|e two" "iw")
+              :to-equal "~one| two")
       (put 'evil-word 'targets-no-extend t)
       ;; should now seek forward
-      (expect (targets-with "~one| two " "aw")
-              :to-equal "one ~two| ")
+      (expect (targets-with "~on|e two" "iw")
+              :to-equal "one ~tw|o")
       (put 'evil-word 'targets-no-extend nil)))
   (describe "targets-a-word"
     (it "should delete a word and trailing or leading whitespace"
@@ -444,16 +446,12 @@ considered as part of the region."
       (expect (targets-with "|one two three" "v2aw")
               :to-equal "~one two| three"))
     (it "should optionally seek instead of extending the selection"
-      (expect (targets-with "one| two" "viw")
-              :to-equal "one~| two")
-      (expect (targets-with "~on|e two" "iw")
-              :to-equal "~one| two")
+      (expect (targets-with "~one| two " "aw")
+              :to-equal "~one two| ")
       (put 'evil-word 'targets-no-extend t)
       ;; should now seek forward
-      (expect (targets-with "one| two" "viw")
-              :to-equal "one ~tw|o")
-      (expect (targets-with "~on|e two" "iw")
-              :to-equal "one ~tw|o")
+      (expect (targets-with "~one| two " "aw")
+              :to-equal "one ~two| ")
       (put 'evil-word 'targets-no-extend nil)))
   (describe "targets-inner-next-word"
     (xit "should delete the next word excluding whitespace"
@@ -576,12 +574,12 @@ considered as part of the region."
   (describe "targets-inner-next-pair"
     (it "should act on the contents of the next pair delimiters"
       (expect (targets-with "|a [(b) (c {d})]" "dind")
-              :to-equal "a [|]")
+              :to-equal "|a []")
       (expect (targets-with "|a [(b) (c {d})]" "vind")
               :to-equal "a [~(b) (c {d}|)]"))
     (it "should support a count"
       (expect (targets-with "|a [b (c [d])]" "d2ind")
-              :to-equal "a [b (|)]")
+              :to-equal "|a [b ()]")
       (expect (targets-with "|a [b (c [d])]" "v2ind")
               :to-equal "a [b (~c [d|])]"))))
 

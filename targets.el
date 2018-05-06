@@ -183,13 +183,66 @@ variable."
   "Same as `max' but remove nils from NUMBERS."
   (apply #'max (remove nil numbers)))
 
+(defun targets--forward (thing &optional count)
+  "Call THING's targets-seek-op or `forward-thing' with COUNT."
+  (let ((forward-op (get thing 'targets-seek-op)))
+    (if forward-op
+        (funcall forward-op count)
+      (forward-thing thing count))))
+
+(defun targets--end-p (thing &optional backward)
+  "Return whether seeking forward for THING goes to the thing end.
+If BACKWARD is non-nil, return whether seeking backward for THING goes to the
+thing end."
+  (if backward
+      (get thing 'targets-seeks-backward-end)
+    (not (get thing 'targets-seeks-forward-begin))))
+
+(defun targets--bounds-thing (thing &optional backward)
+  "Return the bounds of the THING at point.
+This function is meant to be called just after seeking. If at no thing or at two
+things (e.g. at the end of a one character evil-word like \"word-|word\" or a
+the end of a list \")|)\"), and seeking moved the point to the end of THING (as
+determined by `targets--end-p' called with THING and BACKWARD), return the
+bounds corresponding to the thing that the point is at the end of."
+  (let* ((bounds (bounds-of-thing-at-point thing))
+         (end (targets--end-p thing backward))
+         (previous-bounds (when (and end
+                                     (or (not bounds)
+                                         ;; e.g. foo|-bar
+                                         (= (point) (car bounds))
+                                         ;; e.g. )|)
+                                         (= (point) (cdr bounds))))
+                            (save-excursion
+                              (backward-char)
+                              (let ((bounds
+                                     (bounds-of-thing-at-point thing)))
+                                ;; e.g. should not use previous bounds for (|(
+                                ;; this can only happen when
+                                ;; targets-seeks-forward-begin is not set
+                                ;; correctly
+                                (when (and bounds (or (= (point) (cdr bounds))
+                                                      ;; e.g. default list thing
+                                                      (= (1+ (point)) (cdr bounds))))
+                                  bounds))))))
+    (or previous-bounds bounds)))
+
+(defun targets--move-back (thing &optional backward)
+  "Move backward if seeking for THING moved to the thing end.
+BACKWARD and THING are passed to `targets--end-p' to determine this."
+  (when (targets--end-p thing backward)
+    (backward-char)))
+
 (defun targets-seek-forward (open close type &optional count bound)
   "Seek forward to text object specified by OPEN, CLOSE and TYPE COUNT times.
 This function will seek to the next text object if there is an existing text
 object at the point. If BOUND is non-nil, do not seek beyond BOUND. If
-successful, this function will move the point to beginning of the match and
-return its position."
+successful, this function will move the point and return the new position.
+Otherwise it will return nil."
   (or count (setq count 1))
+  (when (< count 0)
+    (targets-seek-backward open close type count bound)
+    (cl-return-from targets-seek-forward))
   (setq bound (targets--min bound (funcall targets-bound) (point-max)))
   (let ((orig-pos (point))
         case-fold-search)
@@ -213,27 +266,30 @@ return its position."
              (beginning-of-thing 'evil-quote)))))
       (object
        (let* ((thing open)
-              (current-bounds (bounds-of-thing-at-point thing)))
-         ;; additional property for things specifically for targets.el
-         ;; if the thing is nestable (e.g. lists), going to the end would skip
-         ;; past any nested things
-         (unless (get thing 'nestable)
-           (ignore-errors (end-of-thing thing)))
-         (let ((pos (point)))
-           (cond ((and current-bounds
-                       ;; don't move forward if already on new thing (necessary
-                       ;; to handle one character things like - for evil words)
-                       (not (equal current-bounds
-                                   (bounds-of-thing-at-point thing)))))
-                 (t
-                  (forward-thing thing count)
-                  (when (or (= (point) pos)
-                            (> (point) bound)
-                            ;; may have moved onto a one character thing
-                            (backward-char)
-                            ;; this will return non-nil (the pos) on success
-                            (not (ignore-errors (beginning-of-thing thing))))
-                    (goto-char orig-pos))))))))
+              (initial-bounds (bounds-of-thing-at-point thing))
+              seek-start-pos)
+         ;; maybe go to the next thing
+         (targets--forward thing)
+         ;; using `targets--bounds-thing' because may have moved to the end of a
+         ;; thing that is also at the next thing (e.g. evil-word: "thing|-" or
+         ;; for list thing ")|)")
+         (if (equal (targets--bounds-thing thing) initial-bounds)
+             ;; haven't reached new thing yet
+             (setq seek-start-pos (point))
+           (setq seek-start-pos orig-pos)
+           (cl-decf count))
+         (cl-dotimes (_ count)
+           (let ((pos (point)))
+             (targets--forward thing)
+             (when (or (= (point) pos)
+                       (> (point) bound))
+               (goto-char pos)
+               (cl-return))))
+         (if (or (= (point) seek-start-pos)
+                 (> (point) bound))
+             ;; failed to seek
+             (goto-char orig-pos)
+           (targets--move-back thing)))))
     (unless (= (point) orig-pos)
       (point))))
 
@@ -243,6 +299,9 @@ This function will seek to the previous text object if there is an existing text
 object at the point. If BOUND is non-nil, do not seek beyond BOUND. If
 successful, return the matched position (otherwise nil)."
   (setq count (or count 1))
+  (when (< count 0)
+    (targets-seek-forward open close type count bound)
+    (cl-return-from targets-seek-backward))
   (setq bound (targets--max bound (funcall targets-bound t) (point-min)))
   (let ((orig-pos (point))
         case-fold-search)
@@ -295,19 +354,25 @@ successful, return the matched position (otherwise nil)."
            (goto-char orig-pos))))
       (object
        (let* ((thing open)
-              (current-bounds (bounds-of-thing-at-point thing)))
-         (unless (get thing 'nestable)
-           (ignore-errors (beginning-of-thing thing)))
-         (let ((pos (point)))
-           (cond ((and current-bounds
-                       (not (equal current-bounds
-                                   (bounds-of-thing-at-point thing)))))
-                 (t
-                  (forward-thing thing (- count))
-                  (when (or (= (point) pos)
-                            (< (point) bound)
-                            (not (ignore-errors (beginning-of-thing thing))))
-                    (goto-char orig-pos))))))))
+              (initial-bounds (bounds-of-thing-at-point thing))
+              seek-start-pos)
+         ;; maybe go to the previous thing
+         (targets--forward thing (- count))
+         (if (equal (targets--bounds-thing thing t) initial-bounds)
+             (setq seek-start-pos (point))
+           (setq seek-start-pos orig-pos)
+           (cl-decf count))
+         (cl-dotimes (_ count)
+           (let ((pos (point)))
+             (targets--forward thing -1)
+             (when (or (= (point) pos)
+                       (< (point) bound))
+               (goto-char pos)
+               (cl-return))))
+         (if (or (= (point) seek-start-pos)
+                 (< (point) bound))
+             (goto-char orig-pos)
+           (targets--move-back thing t)))))
     (unless (= (point) orig-pos)
       (point))))
 
@@ -363,6 +428,17 @@ new point is not far enough away from the original point as determined by
 
 ;;; * Avy-related Functions
 (with-eval-after-load 'avy
+  (defun targets--overlay-position (thing)
+    "Return the position to display an overlay for the current THING.
+Generally, this will be the beginning of the thing. This function assumes that
+the point is on a THING."
+    (let ((overlay-op (get thing 'targets-overlay-position)))
+      (if overlay-op
+          (save-excursion
+            (funcall overlay-op)
+            (point))
+        (car (bounds-of-thing-at-point thing)))))
+
   (defun targets--collect-text-objects (open close type select-func)
     "Collect all locations of visible text objects based on OPEN and TYPE.
 SELECT-FUNC is used to determine if there is a text object at the beginning of
@@ -396,14 +472,17 @@ current text object."
                            (and range (>= (car range) (car bounds)))))
                 (push (point) to-positions))
               (dotimes (i (length open))
-                (while (setq to-pos (targets-seek-forward
-                                     (nth i open)
-                                     (nth i close)
-                                     (nth i type)
-                                     1
-                                     (cdr bounds)))
-                  (push to-pos to-positions)
-                  (goto-char to-pos))
+                (while (setq to-pos (when (targets-seek-forward
+                                           (nth i open)
+                                           (nth i close)
+                                           (nth i type)
+                                           1
+                                           (cdr bounds))
+                                      (if (eq (nth i type) 'object)
+                                          (targets--overlay-position
+                                           (nth i open))
+                                        (point))))
+                  (push to-pos to-positions))
                 (goto-char (car bounds)))
               (setq all-to-positions
                     (append all-to-positions
@@ -489,7 +568,21 @@ it starts at or after the beginning of the window."
         new-range
       range)))
 
-;; TODO consider splitting into different function depending on type
+;; NOTE: this does not currently attempt to keep compatibility with vim
+;; behavior; e.g. if no extend is enabled for evil-word, "foo| bar" will
+;; highlight "~foo| bar" not "foo~ bar|"
+(defun targets--select-inner-object (thing _beg _end type &optional _count line)
+  "A more basic version of `evil-select-inner-object'.
+This function does not seek or extend a selection. THING, TYPE, and LINE are the
+same as for `evil-select-inner-object'"
+  (let ((bounds (bounds-of-thing-at-point thing)))
+    (when bounds
+      (evil-range (car bounds)
+                  (cdr bounds)
+                  (if line 'line type)
+                  :expanded t))))
+
+;; TODO split into different function for each type
 (defun targets--select-to (to-type select-type linewise open close beg end type
                                    count)
   "Return a range corresponding to the matched text object.
@@ -507,16 +600,17 @@ objects."
                          (string-to-char close)))
            (thing (when (eq to-type 'object)
                     open))
-           (shrink-inner (and thing
-                              (get thing 'targets-shrink-inner)
-                              (if (functionp
-                                   (get thing 'targets-shrink-inner))
-                                  (get thing 'targets-shrink-inner)
-                                #'targets--shrink-inner)))
+           (shrink-inner-op (and thing
+                                 (get thing 'targets-shrink-inner-op)
+                                 (if (functionp
+                                      (get thing 'targets-shrink-inner-op))
+                                     (get thing 'targets-shrink-inner-op)
+                                   #'targets--shrink-inner)))
            (no-extend (and thing (get thing 'targets-no-extend)))
+           (extend-seek-op (and thing (get thing 'targets-extend-seek-op)))
            (inclusive (when (memq select-type '(a around))
                         t))
-           (range
+           (orig-range
             (save-excursion
               (cl-case to-type
                 (pair
@@ -543,23 +637,19 @@ objects."
                        range)
                    (evil-select-quote open-char beg end type count)))
                 (object
-                 (when no-extend
-                   ;; discard visual info (so can seek past)
-                   (setq beg nil end nil))
-                 ;; prevent returning range when there is no object at the point
-                 ;; TODO just write own basic selection function
-                 (cl-letf (((symbol-function
-                             'evil-bounds-of-not-thing-at-point)
-                            (if no-extend
-                                #'ignore
-                              (symbol-function
-                               'evil-bounds-of-not-thing-at-point))))
-                   (if (and inclusive
-                            (not shrink-inner))
-                       (evil-select-an-object thing beg end type count
-                                              linewise)
-                     (evil-select-inner-object thing beg end type count
-                                               linewise))))))))
+                 ;; no-extend can be useful to prevent selection in between
+                 ;; objects even without a region
+                 (cond ((or no-extend
+                            (and (region-active-p) extend-seek-op))
+                        (targets--select-inner-object thing beg end type
+                                                      count linewise))
+                       ((and inclusive (not shrink-inner-op))
+                        (evil-select-an-object thing beg end type count
+                                               linewise))
+                       (t
+                        (evil-select-inner-object thing beg end type count
+                                                  linewise)))))))
+           (range (cl-copy-list orig-range)))
       (when range
         (when (and (not inclusive)
                    (not (eq to-type 'object))
@@ -570,19 +660,20 @@ objects."
         (unless (or (> (car range) (point))
                     (< (cadr range) (point)))
           (when (and (not inclusive)
-                     shrink-inner)
+                     shrink-inner-op)
             ;; need to shrink inner before inside for object type
-            (setq range (targets--alter-range range shrink-inner)))
+            (setq range (targets--alter-range range shrink-inner-op)))
           (setq range
                 (cond ((or (and (eq select-type 'around)
                                 ;; for now around being different from a only makes
                                 ;; sense with a non-whitespace inner version of the
                                 ;; object
                                 (or (not (eq to-type 'object))
-                                    shrink-inner))
+                                    shrink-inner-op))
                            (and (eq select-type 'a)
-                                (not shrink-inner)
-                                no-extend))
+                                (not shrink-inner-op)
+                                ;; previously prevented whitespace selection
+                                (or no-extend extend-seek-op)))
                        (when (eq to-type 'separator)
                          (setf (cadr range) (1+ (cadr range))))
                        (targets--alter-range range #'targets--extend-around))
@@ -590,14 +681,28 @@ objects."
                        (targets--alter-range range #'targets--shrink-inside))
                       (t
                        range)))
-          (if (and no-extend
+          (if (and (or no-extend extend-seek-op)
                    (region-active-p)
-                   (= (car range) (region-beginning))
-                   ;; TODO for some reason region-end is not the same as normal
-                   (= (cadr range) (1+ (region-end)))
-                   (targets-seek-forward open close to-type))
-              ;; seek if enabled
-              nil
+                   ;; seek if the new range is the same or smaller
+                   ;; range could be smaller e.g. in this case: (~foo (bar|))
+                   (>= (car range) (region-beginning))
+                   ;; TODO for some reason region-end is not the same here as
+                   ;; with "M-:"; evil positions the point just before the
+                   ;; normal region end because of its concept of the point
+                   ;; being "on" the next character which is probably related
+                   (<= (cadr range) (1+ (region-end))))
+              (cond (extend-seek-op
+                     ;; seek to a point where the bounds will be expanded and
+                     ;; try again
+                     (when (ignore-errors (funcall extend-seek-op))
+                       (targets--select-to to-type select-type linewise
+                                           open close
+                                           ;; clear selection
+                                           nil nil type count)))
+                    (t
+                     (deactivate-mark)
+                     ;; seek only if enabled
+                     nil))
             range))))))
 
 (defun targets--select-to-with-seeking

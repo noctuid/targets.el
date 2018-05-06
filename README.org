@@ -156,7 +156,18 @@ Implementing a thing requires implementing 1 to 5 functions:
 
 =thingatpt= does not specify what the return value of =forward-op= should be, but evil requires it to return =0= on success (or =1=, for example, on failure like ~forward-line~ does). Not all things do this, so you may need to alter the =forward-op= for some things to meet this requirement (or growing a selection will break, for example).
 
-=thingatpt= uses symbol properties to store/obtain these functions:
+Targets also allows implementing the following functions to support customized behavior for more specialized things (e.g. nestable things):
+- =targets-shrink-inner-op=
+- =targets-no-extend=
+- =targets-seek-op=
+- =targets-seeks-forward-begin=
+- =targets-seeks-backward-end=
+- =targets-overlay-position=
+- =targets-extend-seek-op=
+
+See the following sections for more information on these targets functions.
+
+=thingatpt= and =targets= use symbol properties to store/obtain these functions:
 #+begin_src emacs-lisp
 (put 'thing-name '<op> #'thing-name-<op>)
 
@@ -184,7 +195,15 @@ Implementing a thing requires implementing 1 to 5 functions:
 
 =forward-op= is the only function required for the previously listed functionality to work. Without a =beginning-op= and =end-op=, it should support both a positive and negative count. Note that there is no =backward-op=; =forward-op= is used for backward movement as well. With a positive count, it should move to the next thing end (which can be the end of the current thing or the end of the next thing if the point is already at the end of the current thing) that number of times. With negative count, it should move to the previous thing beginning (which can be the beginning of the current or previous thing) that number of times.
 
-When =beginning-op= and =end-op= exist, =thingatpt= will use them instead of =forward-op= to move to the beginning and end of the current thing in order to get its bounds. Alternatively, if =bounds-of-thing-at-point= exists, it will be used directly to obtain the thing bounds. Note that ~beginning-of-thing~ and ~end-of-thing~ always call ~bounds-of-thing-at-point~ to get and then move to a thing's beginning or end, so you do not need to explicitly define =beginning-op= or =end-op= if you've already implemented/defined =bounds-of-thing-at-point=.
+When =beginning-op= and =end-op= exist, =thingatpt= will use them instead of =forward-op= to move to the beginning and end of the current thing in order to get its bounds. Alternatively, if =bounds-of-thing-at-point= exists, it will be used directly to obtain the thing bounds. Note that ~beginning-of-thing~ and ~end-of-thing~ always call ~bounds-of-thing-at-point~ to get and then move to a thing's beginning or end, so you do not need to explicitly define =beginning-op= or =end-op= if you've already implemented/defined =bounds-of-thing-at-point=. In evil the point is considered as being on the next character, so if you're implementing a text object where the point could be both at the end and at the beginning of a thing, =bounds-of-thing-at-point= should return the bounds of the thing that the point is /on/. For an example, this is how the default list thing behaves:
+#+begin_src emacs-lisp
+(list)|
+;; (bounds-of-thing-at-point 'list) returns nil
+|(list)
+;; (bounds-of-thing-at-point 'list) returns the bounds of list
+(defun (args)|...)
+;; (bounds-of-thing-at-point 'list) returns the bounds of defun
+#+end_src
 
 =thing-at-point= returns a string corresponding to the current thing. It is generally not necessary to manually implement this function for any specific thing as =thingatpt= can just use the thing bounds to get the corresponding buffer string. This functionality is also not needed for text objects.
 
@@ -316,13 +335,13 @@ For example, if you wanted to create a thing version of the paren object or any 
   (cl-incf (car bounds))
   (cl-decf (cadr bounds))
   bounds)
-(put 'my-thing 'targets-shrink-inner #'targets--shrink-inner)
+(put 'my-thing 'targets-shrink-inner-op #'targets--shrink-inner)
 #+end_src
 
 Since this is common for inner text objects, you can just specify =t= to use targets' default shrink function:
 #+begin_src emacs-lisp
 ;; use default shrink function
-(put 'my-thing 'targets-shrink-inner t)
+(put 'my-thing 'targets-shrink-inner-op t)
 #+end_src
 
 Note that you don't need to check if the range is non-nil or if the new range is valid (i.e. the beginning is not equal to or after the end); targets already handles these cases.
@@ -361,6 +380,137 @@ Now targets will seek forward in cases where there is no thing at the point or t
 (~"string|" (foo (bar "string")))
 ;; press the key for "a string" again
 ("string" (foo (bar ~"string|")))
+#+end_src
+
+*** Creating Nestable Things
+Default forward functions like ~forward-sexp~ do not enter into nested lists but instead stay at the same level. Using a thing with this behavior will work fine with this package, but if you want seeking/remote operations to work with things at all nesting levels, you may wish to create a forward function that will enter and exit nested things. To extend/improve behavior of seeking, you can implement the following functions:
+
+- =targets-seek-op=
+- =targets-seeks-forward-begin= (see [[#bounds-of-thing-at-point-ambiguity][Bounds of Thing at Point Ambiguity]])
+- =targets-seeks-backward-end= (see above)
+- =targets-overlay-position= (usually unnecessary)
+
+A =forward-op= can be written to enter and exit nested things, but its default behavior (i.e. going to the end of a thing) is not suitable for seeking. Consider the following example:
+#+begin_src emacs-lisp
+;; "l" is being used for a list thing
+(|foo (bar (baz)))
+;; dinl
+(foo (bar (|)))
+#+end_src
+
+In this example, you might expect =dinl= to delete =bar...=, but it instead deletes =baz...=. This is because =forward-op= normally seeks to the next thing /end/ not beginning. While you could simply write your =forward-op= so that it moves forward to thing beginning instead, targets provides =targets-seek-op= for this purpose instead (since targets, evil, or another package may want to rely on =forward-op= going to a thing's end). =targets-seek-op= should follow these rules:
+
+- With a positive count, move to the thing a "next" text object should act on
+- With a negative count, move to the thing a "previous" text object should act on
+- Do not move the point on failure
+- Return value does not matter
+
+Here are some possible behaviors for =targets-seek-op=:
+1. Go to the next thing beginning with a positive count or to the previous thing beginning with a negative count (=targets-overlay-position= unnecessary)
+2. Go to the next thing beginning or end with a positive count or to the previous thing beginning or end with a positive count (=targets-overlay-position= required to consistently display the overlay at the start)
+3. Go to the next thing beginning with a positive count or to the previous thing end with a negative count (opposite of =forward-op=; probably just as undesirable since it will be impossible to have next/previous text objects work on things that start before the point or end after the point)
+
+With 1, seeking will have this behavior:
+#+begin_src emacs-lisp
+(foo (bar (|baz)) (qux))
+;; dinl
+(foo (bar (|baz)) ())
+#+end_src
+
+With 2, =dinl= will delete the next list, even if it started before the point:
+#+begin_src emacs-lisp
+(foo (bar (|baz)) (qux))
+;; dinl
+(foo (|) (qux))
+#+end_src
+
+I personally prefer 1 since it consistently acts on opening delimiters and is easy to implement, but you can implement =targets-seek-op= however you want. You could even create alternate text objects for both behaviors if you wanted to.
+
+=targets-overlay-position= is used when collecting text object locations during remote selection to obtain the positions to put overlays at for each thing. It should follow these rules:
+
+- The function takes no arguments and should move the point to the location to put the overlay; the point is guaranteed to be on a thing initially
+- The return value doesn't matter
+
+For example, if =targets-seek-op= sometimes or always moves the point to a thing end, and you only want avy overlays to appear on thing beginnings, you could implement =targets-overlay-position= like this:
+#+begin_src emacs-lisp
+(defun my-thing-overlay-position ()
+  (beginning-of-thing 'my-thing))
+(put 'my-thing 'targets-overlay-position 'my-thing-overlay-position)
+#+end_src
+
+By default, targets will use the current thing beginning as the overlay position, so you do not actually need to implement =targets-overlay-position= unless you want overlays to sometimes or always be at the end of a thing (or some other position).
+
+Also note that targets will automatically sort the collected positions, so it doesn't matter if the overlay positions are not found in order.
+
+**** Custom Region Expansion Behavior
+Evil's object/thing selection functions are not suitable for extending a visual selection for nestable things. If you want repeatedly calling the text object in visual state to expand the selection to the outer thing, you can implement =targets-extend-seek-op= to have the following behavior:
+
+- Takes no arguments
+- Should move the point to the location where ~bounds-of-thing-at-point~ should be called (e.g. move the point to the outer thing)
+- Should return non-nil on success; should error or return nil on failure (in which case targets will seek if seeking is enabled)
+
+For example, implementing region for a list thing would look like this:
+#+begin_src emacs-lisp
+(defun my-up-list ()
+  "Like `up-list' but return non-nil on success."
+  (let ((orig-pos (point)))
+    (ignore-errors (up-list))
+    (unless (= (point) orig-pos)
+      (point))))
+(put 'my-list-thing 'targets-extend-seek-op #'my-up-list)
+#+end_src
+
+**** Bounds of Thing at Point Ambiguity
+You can probably ignore this section unless you are having issues with the wrong thing being selected when the point is bordering two things. Targets is smart enough to handle most cases where there is a thing on either side of the point automatically, but for some things, you may need to keep this possibility in mind when implementing =bounds-of-thing-at-point= (or =beginning-op= and =end-op=).
+
+As previously mentioned, evil considers the point to be on the character after it. Consider the following example for an =evil-word=:
+#+begin_src emacs-lisp
+foo|-bar
+#+end_src
+
+In this example, the point is at the end of the word =foo= and at the beginning of the hyphen. Since the point is considered on the hyphen, there is no ambiguity. =diw= will act on the hyphen. However, now consider seeking. ~forward-op~ will move to the next thing if it as at the end of a thing. Targets can't always move to the end of a thing and then seek since this could skip over nested things (this is why =targets-seek-op= exists). Since =forward-op= (or =targets-seek-op=) may not move the point to the next thing, targets has to check ~bounds-of-thing-at-point~ to see if the thing as changed. For most cases this works as expected:
+#+begin_src emacs-lisp
+|foo bar
+;; (forward-thing 'evil-word)
+foo| bar
+;; (bounds-of-thing-at-point 'evil-word) returns bounds of foo
+#+end_src
+
+This won't work when things are directly next to each other though:
+#+begin_src emacs-lisp
+|foo-bar
+;; (forward-thing 'evil-word)
+foo|-bar
+;; (bounds-of-thing-at-point 'evil-word) returns bounds of -; not what we
+;; wanted!
+#+end_src
+
+Targets handles this by checking the bounds at the character before the point when seeking to the end of a thing (this also handles cases where ~bounds-of-thing-at-point~ returns nil at the end of a thing, e.g. the default list thing).
+
+As for nested text objects, targets can handle both of the common cases where the point is at two things:
+#+begin_src emacs-lisp
+;; at end of thing, use previous character's bounds
+(foo (bar)|)
+;; not at end of thing, don't use previous character's bounds
+(|(foo) bar)
+#+end_src
+
+For a nestable thing with a custom =targets-seek-op=, targets may not correctly handle the following case since seeking could potentially have moved the point either to the end of foo or to the beginning of bar:
+#+begin_src emacs-lisp
+(foo)|(bar)
+#+end_src
+
+This case is unlikely because there will generally be a space in between lists, but if this is a possible issue for your thing (e.g. a thing end can be right next to a beginning and =targets-seek-op= may go to the beginning of a thing with a positive count), then you must let targets know how your custom seek operation behaves by setting =targets-seeks-backward-end= and/or =targets-seeks-forard-begin=:
+#+begin_src emacs-lisp
+;; this seek operation always seeks to the thing end (for both directions)
+(put 'my-thing 'targets-seek-op #'my-thing-custom-seek)
+;; let targets know
+(put 'my-thing 'targets-seeks-backward-end t)
+
+;; this seek operation always seeks to the thing beginning (for both directions)
+(put 'my-thing 'targets-seek-op #'my-thing-new-custom-seek)
+;; let targets know
+(put 'my-thing 'targets-seeks-forward-begin t)
 #+end_src
 
 * Specific Provided Text Objects
@@ -412,6 +562,7 @@ After targets has loaded, you can still add items to and remove items from =targ
                    :around-key nil
                    :remote-key nil))
 #+end_src
+
 * Settings
 ** Text Object Specific Settings
 :PROPERTIES:
