@@ -923,6 +923,7 @@ a list of hooks."
                       (when (targets-seek-forward ,open ,close ',to-type count)
                         ;; purposely don't give visual info since seeking
                         (setq beg nil end nil)
+                        (deactivate-mark)
                         ;; count should only be used for initial seeking
                         (setq count 1)
                         ,(cl-second info))))
@@ -940,6 +941,7 @@ a list of hooks."
                (targets--reset-after)
                (when (targets-seek-backward ,open ,close ',to-type count)
                  (setq beg nil end nil count 1)
+                 (deactivate-mark)
                  ,(cl-second info))))
           (list (list last-inner-name select-inner " the last inner ")
                 (list last-a-name select-a " the last outer ")
