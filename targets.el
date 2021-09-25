@@ -263,7 +263,7 @@ Otherwise it will return nil."
            (if (or (= (point) pos)
                    (> (point) bound))
                (goto-char orig-pos)
-             (beginning-of-thing 'evil-quote)))))
+             (ignore-errors (beginning-of-thing 'evil-quote))))))
       (object
        (let* ((thing open)
               (initial-bounds (bounds-of-thing-at-point thing))
